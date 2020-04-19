@@ -15,6 +15,9 @@ char  tempChar1[3], tempChar2[17];
 extern LiquidCrystal_I2C lcd;
 extern struct setpointStatus spStatus;
 extern struct P_Sensor p_sensor;
+#ifdef Beeper
+extern struct Alarm alarm;
+#endif
 
 extern int CVmode; // CV or CP mode indicator;
 extern int selfTestStatus;
@@ -29,7 +32,8 @@ extern int VentilatorOperationON;
 extern int OkButton;
 extern int SnoozeButton;
 extern int MotorSpeedSF; // Speed for 1 liter/second
-extern int HomePos_Hit_F;
+extern int Motor1_HomePos_Hit_F;
+extern int Motor2_HomePos_Hit_F;
 extern int CVmode;
 extern int ErrorNumber;
 extern int selfTestProg;
@@ -39,11 +43,6 @@ extern int devMode;
 extern int I_E_InpsFactor[5];
 extern int I_E_ExpFactor[5]; 
 
-#ifdef Beeper
-extern int alarmAction;
-extern unsigned int alarmSeverity;
-extern unsigned long alarmDuration; //milliseconds
-#endif
 
 extern char  tempChar[20];
 
@@ -160,7 +159,20 @@ inline static void LCD_Display(int WarmUpFlag, int TotalWarmUpTime_msec, int Sno
         lcd.print(tempChar);
 
         lcd.setCursor(0, 3);
+        switch (ErrorNum)
+        {
+        case HOMING_NOT_DONE_ERROR:
+          sprintf(tempChar2, "   HOMING NOT DONE  ");
+          break;
+        case START_SWT_ERROR:
+          sprintf(tempChar2, " VENTILATION ACTIVE ");
+          break;
+        default:
         sprintf(tempChar, "Wait 4 ST/Calib Done");
+          break;
+        }
+
+
         lcd.print(tempChar);
       }
       else
@@ -299,7 +311,7 @@ inline static void LCD_Display(int WarmUpFlag, int TotalWarmUpTime_msec, int Sno
               lcd.print(tempChar);
 
               lcd.setCursor(0, 2);
-              sprintf(tempChar, "4:PEEP 5:LwBrth");
+              sprintf(tempChar, "4:PEEP 5:AirwayPress");
               lcd.print(tempChar);
 
               lcd.setCursor(0, 3);
@@ -360,11 +372,6 @@ void userInterface(void)
   static int lastButtonStateOkBtn = LOW;
   static int lastButtonStateSnzBtn = LOW;
 
-#ifdef AUTO_HOME
-#define homePosHitDelay 1
-  static int homePosHitCtr = 0;
-
-#endif
   float tempFloat;
 
 #ifdef Keypad_4x3
@@ -377,21 +384,6 @@ void userInterface(void)
   reqVolume = spStatus.curTV;
   reqPressure = spStatus.curOP;
 
-  tempFloat = map(analogRead(pin_Knob_1), minPot, maxPot, 0, 10);
-  if (tempFloat >= 0.0 && tempFloat < 2.0)
-    spStatus.newI_E_Section = 1;
-  else if (tempFloat >= 2.0 && tempFloat < 4.0)
-    spStatus.newI_E_Section = 2;
-  else if (tempFloat >= 4.0 && tempFloat < 6.0)
-    spStatus.newI_E_Section = 3;
-  else if (tempFloat >= 6.0 && tempFloat < 8.0)
-    spStatus.newI_E_Section = 4;
-  else
-    spStatus.newI_E_Section = 5;
-
-  spStatus.newBPM = map(analogRead(pin_Knob_2), minPot, maxPot, minBPM, maxBPM);
-  spStatus.newTV = map(analogRead(pin_Knob_3), minPot, maxPot, minVolume, maxVolume);
-  spStatus.newOP = map(analogRead(pin_Knob_4), minPot, maxPot, minPressure, maxPressure);
 
   OkButton = debounce(pin_Button_OK, lastDebounceTimeOkBtn, lastButtonStateOkBtn, OkButton);
   SnoozeButton = debounce(pin_Button_SNZ, lastDebounceTimeSnzBtn, lastButtonStateSnzBtn, SnoozeButton);
@@ -399,12 +391,33 @@ void userInterface(void)
 #ifdef Beeper
   if (SnoozeButton == 1)
   {
-    alarmAction = SNOOZE_ALARM;
+    alarm.action = SNOOZE_ALARM;
+    ErrorNumber = 0;
   }
 #endif
 
   if (spStatusAllowChange == 1) // This flag is allowd only when SnoozeBttn is pressed for 3 sec and Setting page is being displayed in LCD_Display
   {
+
+    tempFloat = map(analogRead(pin_Knob_1), minPot, maxPot, 0, 10);
+    if (tempFloat >= 0.0 && tempFloat < 2.0)
+      spStatus.newI_E_Section = 1;
+    else if (tempFloat >= 2.0 && tempFloat < 4.0)
+      spStatus.newI_E_Section = 2;
+    else if (tempFloat >= 4.0 && tempFloat < 6.0)
+      spStatus.newI_E_Section = 3;
+    else if (tempFloat >= 6.0 && tempFloat < 8.0)
+      spStatus.newI_E_Section = 4;
+    else
+      spStatus.newI_E_Section = 5;
+
+    spStatus.newI_E_Section = constrain(spStatus.newI_E_Section, 2, 4); //1:1, 1:2, 1:3
+
+    spStatus.newBPM = map(analogRead(pin_Knob_2), minPot, maxPot, minBPM, maxBPM);
+    spStatus.newTV = map(analogRead(pin_Knob_3), minPot, maxPot, minVolume, maxVolume);
+    spStatus.newOP = map(analogRead(pin_Knob_4), minPot, maxPot, minPressure, maxPressure);
+
+
     if (OkButton == 1)
     {
       spStatus.curI_E_Section = spStatus.newI_E_Section;
@@ -421,20 +434,6 @@ void userInterface(void)
   else
     activateVentilatorOperation = 0;
 
-#ifdef AUTO_HOME
-  if (digitalRead(pin_LmtSWT_OP1) == LOW) //Active Low
-  {
-    homePosHitCtr++;
-  }
-  else
-  {
-    homePosHitCtr--;
-  }
-  homePosHitCtr = constrain(homePosHitCtr, 0, homePosHitDelay); //Instantaneous for now
-  if (homePosHitCtr >= homePosHitDelay) HomePos_Hit_F = 1;  else HomePos_Hit_F = 0; //Instantaneous for now
-#else
-  HomePos_Hit_F = 1;
-#endif
   //  if (digitalRead(pin_Switch_MODE == HIGH))     CVmode = PRESS_CONT_MODE; else activateVentilatorOperation = VOL_CONT_MODE;
 
   LCDDisplayCtr++;

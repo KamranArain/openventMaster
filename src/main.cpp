@@ -30,6 +30,7 @@
 */
 #include "header.h"
 #include "gui.h"
+#include "flowSensor.h"
 
 LiquidCrystal_I2C lcd(0x27, 20, 4); // Address of LCD will be finalized from LCD Datasheet
 //Other Address could be 0x20, 0x27 , 0x3F
@@ -39,38 +40,21 @@ LiquidCrystal_I2C lcd(0x27, 20, 4); // Address of LCD will be finalized from LCD
 #include "telemetry.h"
 extern struct TEL_TYPE TEL;
 #endif
-
-#ifdef StepGen
-// Define the stepper and the pins it will use
-AccelStepper stepper(AccelStepper::DRIVER, pin_Stepper_STEP, pin_Stepper_DIR);
-#endif
-
-#ifdef DC_MOTOR_VNH2SP30
-// Define the MegaServo and the pins it will use
-MegaServo megaServo;
-#endif
-
-#ifdef StepGen
-boolean stopMove = true; // Immediately stop motor movements (E-Stop)
-boolean runAtConstantSpeed = true;
-#endif
-
-int CVmode,          // CV or CP mode indicator;
-    highPressureAlarmCnt, // delay when the pressure is too high (>1.2x preset value) before an alarm is triggered
-    timCnt,               // Timer interrupt cycle counter used to spread the load over time
-    timerLvl;             // Count timer interrupt nesting and skips interface update when more than one
  
 boolean debug;             // True if a debugging mode is used, false otherwise
 float plateauPressure, /* Plateau pressure is the pressure that is applied by the ventilator to the small airways and alveoli.
                            It is measured at end-inspiration with an inspiratory hold maneuver.*/
       PEEPressure,       // Positive end-expiratory pressure (PEEP)
       ambientPressure,   // Calculated ambiant air pressure (averaged)
-      peakPressure,      // high pass filtered value of the pressure. Used to detect patient initiated breathing cycles
+      peakInspPressure,      // high pass filtered value of the pressure. Used to detect patient initiated breathing cycles
       avgPressure,       // Averaged pressure (used to limit the motor speed with short spikes filtered out
       relPressure;       // relative pressure (measured pressure - ambiant pressure)
 unsigned long tick1,            // counter used to trigger sensor measurements //loop 1
          tick2,             // counter used to trigger sensor measurements // loop 2
          breathLength;      // duration of the current breathing cycle in milliseconds. This is 60000/BPM.
+
+boolean PeepValid = false;
+boolean PltPrsValid = false;
 
 char  tempChar[20];
 
@@ -92,14 +76,16 @@ int   MotorSpeedSF, // Speed for 1 liter/second
       // Ratio of distance in steps to air volume in step per milliliter.
       MotorAccelerationSF, // Acceleration for 1 liter / second
       MotorMaxAcceleration;
+int MotorSpeedSF_forPressure; //
 float MotorVolumeSF;
+float MotorPressureSF;
 
 int breathPhase = WAIT_PHASE;
 int selfTestProg = ST_NOT_INIT; // Selft Test is Implemented
 int selfTestStatus = ST_PASS;   // Selft Test is Implemented
 
 #ifdef AUTO_HOME
-int HomePos_Hit_F = 0, Homing_Done_F = 0;
+int Homing_Done_F = 0;
 #endif
 
 int ErrorNumber = 0;
@@ -109,6 +95,18 @@ int activateVentilatorOperation = 0;
 int WarmUpFlag = 1;
 int DevModeDetectionInProg = 0;
 int PEEPMesaureFlag = 0;
+
+int CVmode = VOL_CONT_MODE;// CV or CP mode indicator;
+int assistControl = 0;
+boolean scanBreathingAttempt = false;
+boolean patientTriggeredBreath = false;
+boolean holdManeuver = false;
+boolean setpointAchieved = false;
+int holdDur_ms = 150;
+//int triggerVariable = FLOW_VAR;
+//int cyclingVariable = TIME_VAR;
+float flowTrigger = 0.5; //lpm
+
 int VentilatorOperationON = 0;
 char PressedKey = 0;
 char keyRead = 1;
@@ -119,13 +117,9 @@ int SnoozeButton = 0;
 
 int pressSnsrInUse = MS4525_IN_USE;
 
-#ifdef DC_MOTOR_VNH2SP30
-int motorInUse = DC_MOTOR_IN_USE;
-#endif
-
-#ifdef StepGen
+//#ifdef StepGen
 int motorInUse = STEPPER_IN_USE;
-#endif
+//#endif
 
 int patientWeight = 50; //kg
 
@@ -134,14 +128,18 @@ int I_E_InpsFactor[5] = {2, 1, 1, 1, 1};
 int I_E_ExpFactor[5] = {1, 1, 2, 3, 4};
 float I_E_SampleSet[5] = {2.0, 1.0, 0.5, 0.33, 0.25}; // 2:1, 1:1, 1:2, 1:3, 1:4
 
+extern struct Flow_Sensor FS;
 
 struct setpointStatus spStatus;
 struct P_Sensor p_sensor;
+struct TidalVolume TV;
+struct Slave slave;
 
 #ifdef Beeper
-int alarmAction = SNOOZE_ALARM;
-unsigned int alarmSeverity = MUTE_ALARM;
-unsigned long alarmDuration = 0; //milliseconds
+struct Alarm alarm;
+#endif
+#ifdef PID_CONTROL
+extern struct PID_TYPE pid;
 #endif
 
 void (*resetFunction)(void) = 0; // Self reset (to be used with watchdog)
@@ -158,12 +156,10 @@ boolean checkValues()
   if (isnan(reqVolume)) isOk = false;
   if (isnan(reqPressure)) isOk = false;
 
-#ifdef DC_MOTOR_VNH2SP30
-  if (MotorSpeedSF < minPWM) isOk = false;
-  if (MotorSpeedSF > maxPWM) isOk = false;
-  if (isnan(MotorSpeedSF)) isOk = false;                    // Check for malformed floating point values (NaN)
-  if (isnan(MotorVolumeSF)) isOk = false;                    // Check for malformed floating point values (NaN)
-#endif
+//  if (MotorSpeedSF < minPWM) isOk = false;
+//  if (MotorSpeedSF > maxPWM) isOk = false;
+//  if (isnan(MotorSpeedSF)) isOk = false;                    // Check for malformed floating point values (NaN)
+//  if (isnan(MotorVolumeSF)) isOk = false;                    // Check for malformed floating point values (NaN)
 
   return isOk;
 }
@@ -172,38 +168,47 @@ boolean checkValues()
 
 void beep() // Launch a beep
 {
-  static unsigned int currentToneFreq = MUTE_ALARM;
+  static unsigned int currentToneFreq = SNOOZE_ALARM;
+  static unsigned long t_millis = 0;
 
 #ifdef ActiveBeeper
-  if (alarmAction == SNOOZE_ALARM)
+  if (alarm.action == SNOOZE_ALARM)
   {
     noTone(pin_Beep);
-    currentToneFreq = MUTE_ALARM;
+    currentToneFreq = SNOOZE_ALARM;
+    alarm.toneFreq = SNOOZE_ALARM;
+    alarm.timePeriod = SNOOZE_ALARM;
   }
   else
   {
-    if (alarmSeverity > currentToneFreq)
+    if (alarm.toneFreq > currentToneFreq)
     {
-      tone(pin_Beep, alarmSeverity); //alarmDuration in milliseconds
-      currentToneFreq = alarmSeverity;
+      currentToneFreq = alarm.toneFreq; //High Severity Alarm Has priority
+      t_millis = 0;
     }
+
+    if ((millis() - t_millis) >= alarm.timePeriod)
+    {
+      t_millis = millis();
+      tone(pin_Beep, currentToneFreq, (int)(alarm.timePeriod / 2)); //Duration in milliseconds
+    }    
   }
 #endif
 
-#ifdef PassiveBeeper //Call Inside Interrupt if want to use Passive Beeper
+#ifdef PassiveBeeper //Call Inside Interrupt if want to use Passive Beeper //NEEDS REVISION
   static unsigned long old_millis = 0;
   static unsigned long buzzerToggleTime = 0; //ms
   static int buzzer = HIGH;
-  if (alarmAction == SNOOZE_ALARM)
+  if (alarm.action == SNOOZE_ALARM)
   {
     digitalWrite(pin_Beep, LOW);
-    currentToneFreq = MUTE_ALARM;
+    currentToneFreq = SNOOZE_ALARM;
   }
   else
   {
-    if (alarmSeverity > currentToneFreq)
+    if (alarm.toneFreq > currentToneFreq)
     {
-      currentToneFreq = alarmSeverity;
+      currentToneFreq = alarm.toneFreq;
       buzzerToggleTime = (unsigned long)(500 / currentToneFreq); //ms
     }
     if ((millis() - old_millis) >= buzzerToggleTime)
@@ -246,17 +251,16 @@ void eeget()
   reqVolume = defaultVolume;
   reqPressure = defaultPressure;
   reqExpirationRatioIndex = defaultExpirationRatioIndex;
-#ifdef DC_MOTOR_VNH2SP30
-  MotorSpeedSF = 127;
-  MotorVolumeSF = 2.0;
-#endif
 #ifdef StepGen
   MotorSpeedSF = defMotorSpeed;
   MotorVolumeSF = defMotorVolumeRatio;
+  MotorSpeedSF_forPressure = defMotorSpeed_forPCV;
+  MotorPressureSF = defMotorPressureRatio;
+
   MotorAccelerationSF = defMotorAcceleration;
   MotorMaxAcceleration = defMotorMaxAcceleration;
 #endif
-  Serial.print("Read Default Settings\n");  //Arduino gets stuck if comment this line
+//  Serial.print("Read Default Settings\n");  //Arduino gets stuck if comment this line
 }
 
 int homePosHitMotorPos = 0;
@@ -265,91 +269,84 @@ int OP2HitMotorPos = 0;
 #ifdef StepGen
 void Timer()
 {
-  if (digitalRead(pin_LmtSWT_OP2) == LOW)
+  if (CVmode == VOL_CONT_MODE) {
+  if ((abs(TV.inspiration - volumeSetpoint) <= 20.0) && (breathPhase == INSPIRATION_PHASE) && (!setpointAchieved))
   {
-    if ((breathPhase == INSPIRATION_PHASE) || (breathPhase == HOLD_PHASE))
-    {
-      OP2HitMotorPos = stepper.currentPosition();
-      stepper.moveTo(stepper.currentPosition());
-      stopMove = true;
-      runAtConstantSpeed = false;
-    }
+    Serial2.println("#STOP");
+    slave.lastCMD_ID = STOP; 
+    setpointAchieved = true;
   }
-  //  else if ((digitalRead(pin_LmtSWT_OP1) == LOW) && (breathPhase == EXPIRATION_PHASE))
-  else if (HomePos_Hit_F == 1)
-  {
-    if (Homing_Done_F == 0)
-    {
-      Homing_Done_F = 1;
-      stepper.setCurrentPosition(0);
-      stopMove = true;
-      runAtConstantSpeed = false;
-    }
-    else if ((breathPhase == EXPIRATION_PHASE) || (breathPhase == WAIT_PHASE))
-    {
-      homePosHitMotorPos = stepper.currentPosition();
-      stepper.moveTo(stepper.currentPosition());
-      stopMove = true;
-      runAtConstantSpeed = false;
-    }
+  else    setpointAchieved = false;  
   }
-  if (!stopMove)
+  else // PRESS_CONT_MODE
   {
-    if (runAtConstantSpeed)
+    if ((abs(p_sensor.pressure_gauge_CM - (pressureSetpoint*Pa2cmH2O)) <= 1.0) && (breathPhase == INSPIRATION_PHASE) && (!setpointAchieved))
     {
-      stepper.runSpeedToPosition(); //Non Blocking
+      Serial2.println("#STOP");
+      slave.lastCMD_ID = STOP; 
+      setpointAchieved = true;
     }
+    else    setpointAchieved = false;  
   }
 }
-#endif
-#ifdef AUTO_HOME
-#ifdef StepGen
-void SetHomePosition(void)
-{
-  if (HomePos_Hit_F == 0)
-  {
-    //    Serial.print("Motor Current Pos: "); Serial.println(stepper.currentPosition());
-    digitalWrite(pin_Stepper_MS1, HIGH); //Eighth step
-    digitalWrite(pin_Stepper_MS2, HIGH);
-    digitalWrite(pin_Stepper_MS3, LOW);
-    stepper.move(InvertDir * -40);
-    stepper.setSpeed(500);
-    stopMove = false;
-    runAtConstantSpeed = true;
-  }
-}
-#endif
 #endif
 
 //Self Test and Auto Calibrate Routines
 void selfTest()
 {
+  static boolean ctr = 0;
+  static unsigned long period_us = (unsigned long) ((1.0f / 12000.0f) * 1000000.0f); //12000 steps per second
   ErrorNumber = 0;
   selfTestStatus = ST_PASS;
   selfTestProg   = ST_IN_PROG;
 
 #ifdef StepGen
 #ifdef AUTO_HOME
-  //  Serial.print("HomePos_Hit_F = ");Serial.println(HomePos_Hit_F);
   if (Homing_Done_F == 0)
   {
-    //    Serial.println("Auto Homing in Progress");
-    SetHomePosition();
-    ErrorNumber     = 6;
+    if (ctr == 0) { Serial2.print("#HOME "); Serial2.print(period_us); Serial2.println(); 
+    slave.lastCMD_ID = HOME; }
+    else {ctr++; if (ctr == (1000/samplePeriod1)) ctr = 0;}        
+
+    ErrorNumber     = HOMING_NOT_DONE_ERROR;
     selfTestStatus  = ST_FAIL;
     return;
   }
-  //  Serial.println("Auto Homing Complete");
-  delay(5000);  //For Testing Only
+  else if (Homing_Done_F == 1)
+  {
+    ErrorNumber     = HOMING_NOT_DONE_ERROR;
+    selfTestStatus  = ST_FAIL;
+    return;
+  }
+  else if (Homing_Done_F == 2)
+  {
+    if (slave.stopAck = 0)
+    {
+      Serial2.println("#STOP");
+      slave.lastCMD_ID = STOP; 
+    }
+    //HOMING COMPLETE and SUCCESSFUL
+  }
+  else if (Homing_Done_F == 3)
+  {
+    if (slave.stopAck = 0)
+    {
+      Serial2.println("#STOP");
+      slave.lastCMD_ID = STOP; 
+    }
+    ErrorNumber     = MECH_INTEGRITY_FAILED;
+    selfTestStatus  = ST_FAIL;
+    return;
+  }
 #endif
 #endif
   if (activateVentilatorOperation == 1)
   {
     //    Serial.println("Self Test FAIL");
 
-    ErrorNumber     = 7;
+    ErrorNumber     = START_SWT_ERROR;
     selfTestStatus  = ST_FAIL;
-    selfTestProg    = ST_COMPLETE;
+//    selfTestProg    = ST_COMPLETE;
     return;
   }
   else
@@ -366,6 +363,7 @@ void selfTest()
    and should be called after 10ms
    due to sensor update or refresh rate
 */
+
 inline static void get_sensor_data(uint16_t *raw) {
   Wire.beginTransmission(I2C_ADDRESS_MS4525DO);
   Wire.write(1);
@@ -507,7 +505,6 @@ float readVcc() {
 
 void voltage_correction(float &diff_press_pa)
 {
-  bool updated = false;
   const float slope = 65.0f;
   /*
     apply a piecewise linear correction, flattening at 0.5V from 5V
@@ -525,8 +522,6 @@ void voltage_correction(float &diff_press_pa)
 
 void readSensors() // Read Values from Installed Sensor
 {
-  static int initHold = 1;
-  static int initMeasurePEEP = 1;
 #ifdef MPXV7002DP
   float voltage_read = analogRead(MPX_IN) * ADC_TO_VOLTS;
   /* pressure = 1000 * (((5 * voltageRead) / 5) - (5 / 2));
@@ -579,52 +574,131 @@ void readSensors() // Read Values from Installed Sensor
   p_sensor.q = ( K * diff_press_Bar ) * 60000;
 #endif
 #endif
-
+ 
 #ifdef BMP_180
   Bmp180Read();
 #endif
 
   //FLOW SENSORS
+  #if defined(FLOW_SENSOR_INSTALLED)
+  FS.Q_SLM = getFlowValue();
+  #endif
 
-  // Plateau Pressure & PEEP
+/*
+  Serial.print("$");
+  Serial.print(FS.Q_SLM, 5);
+  Serial.print(" ");
+  Serial.print(TV.measured, 5);
+  Serial.print(";");
+*/
+
+}
+
+void Monitoring()
+{
+  static bool initInsp = true;
+  static bool initHold = true;
+  static bool initExp = true;
+  static bool initMeasurePEEP = true;
+  static float minuteVentilationSum = 0.0;
+
+  static unsigned long pre_millis_1min = 0;
+
+  if ((millis() - pre_millis_1min) >= 60000)
+  {
+    pre_millis_1min = millis();
+    TV.minuteVentilation = minuteVentilationSum;
+  }  
+
+// Plateau Pressure & PEEP and Set Breathing Flags
   switch (breathPhase)
   {
+    case INSPIRATION_PHASE:
+      if (initInsp) {
+        TV.inspiration = 0.0; TV.measured = 0.0;
+        peakInspPressure = p_sensor.pressure_gauge_CM * cmH2O_to_Pa;
+        initInsp = false;
+      }
+      TV.inspiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * samplePeriod1);
+      TV.measured = TV.inspiration;   
+
+      minuteVentilationSum += TV.inspiration;
+
+      if (peakInspPressure < p_sensor.pressure_gauge_CM)
+        peakInspPressure = p_sensor.pressure_gauge_CM;
+
+
+      // reset init Flags
+      initHold = true;
+      initExp = true;
+      initMeasurePEEP = true;
+      scanBreathingAttempt = false;
+      patientTriggeredBreath = false;
+    break;
     case HOLD_PHASE:
-      if (initHold == 1)
+      TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * samplePeriod1);
+
+      PltPrsValid = true;
+      if (initHold)
       {
         plateauPressure = (p_sensor.pressure_gauge_CM * cmH2O_to_Pa);
-        initHold = 0;
+        initHold = false;
       }
       else
       {
         plateauPressure = (plateauPressure + (p_sensor.pressure_gauge_CM * cmH2O_to_Pa)) * 0.5;
       }
+    
+      TV.staticCompliance = (TV.inspiration / (plateauPressure - PEEPressure));
+
+      // reset init Flags
+      initInsp = true;
+      initExp = true;
+      initMeasurePEEP = true;
+      scanBreathingAttempt = false;
+      patientTriggeredBreath = false;
       break;
     case EXPIRATION_PHASE:
+      if (initExp) {TV.expiration = 0.0; initExp = false;}
+      TV.expiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * samplePeriod1);      
+      TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * samplePeriod1);
+
+      if (assistControl == 1) {
+        if (scanBreathingAttempt)
+        {
+          if (FS.Q_SLM >= flowTrigger) {
+          patientTriggeredBreath = true; }          
+        }
+      }
       if (PEEPMesaureFlag == 1)
       {
-        if (initMeasurePEEP == 1)
+        PeepValid = true;
+        if (initMeasurePEEP)
         {
           PEEPressure = (p_sensor.pressure_gauge_CM * cmH2O_to_Pa);
-          initMeasurePEEP = 0;
+          initMeasurePEEP = false;
         }
         else
         {
           PEEPressure = (PEEPressure + (p_sensor.pressure_gauge_CM * cmH2O_to_Pa)) * 0.5;
         }
+//        TV.staticCompliance = (TV.inspiration / (plateauPressure - PEEPressure));
       }
-      initHold = 1;
+
+      // reset init Flags
+      initInsp = true;
+      initHold = true;
       break;
-    default: //WAIT AND INSPIRATION PHASE
-      initHold = 1;
-      initMeasurePEEP = 1;
+    default: //WAIT PHASE
+      // reset init Flags
+      initInsp = true;
+      initHold = true;
+      initExp = true;
+      initMeasurePEEP = true;
+      scanBreathingAttempt = false;
+      patientTriggeredBreath = false;
       break;
   }
-
-}
-
-void meas() //print all sensoe values on Serial Port Monitor
-{
 }
 
 /*
@@ -634,6 +708,100 @@ void meas() //print all sensoe values on Serial Port Monitor
 */
 void alarmControl() // Read Values from Installed Sensor
 {
+
+  #define COUNT_10ms  10/samplePeriod1
+  #define COUNT_50ms  50/samplePeriod1
+  #define COUNT_100ms 100/samplePeriod1
+
+  //1 count = 10ms
+  static unsigned int HighPeakPressAlarmCnt = 0;
+  static unsigned int HighPltPressAlarmCnt = 0;
+  static unsigned int LowPEEPAlarmCnt = 0;
+
+  //ADD Power Related Alarms here
+  // Low Battery
+  // Battery Power In Use  
+
+  if ((VentilatorOperationON == 1) && (breathPhase != WAIT_PHASE)) //Ventilation Related Alarms
+  {
+    ////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////FAULT DETECTION////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////////
+
+
+    if (p_sensor.pressure_gauge_CM > pressureSetpoint) //Pressure Setpoint in Control Loop (User Input Based)
+    {
+      HighPeakPressAlarmCnt++;
+    } else HighPeakPressAlarmCnt--;
+
+    if (PltPrsValid == true) //To Prevent False Alarms
+    {
+      if (plateauPressure > (35.0 * cmH2O_to_Pa)) //FOR COVID-19 : NHS Requirement
+      {
+        HighPltPressAlarmCnt++;
+      } else HighPltPressAlarmCnt--;
+    } else HighPltPressAlarmCnt = 0;
+
+
+    if (PeepValid == true) //To Prevent False Alarms
+    {
+      if (PEEPressure < (5.0 * cmH2O_to_Pa)) //FOR COVID-19 : NHS Requirement
+      {
+        LowPEEPAlarmCnt++;
+      } else LowPEEPAlarmCnt--;
+    } else LowPEEPAlarmCnt = 0;
+
+    
+    ////////////////////////////////////////////////////////////////////////////////
+    /////////////                   SET ALARMS                      ////////////////
+    /////////////Order: LOW SEVERITY (TOP) -> HIGH SEVERITY (BOTTOM)///////////////
+    ///////////////////////////////////////////////////////////////////////////////
+
+  //HIGH SEVERITY ALARMS HAVE PREFEREENCE
+    if (alarm.toneFreq <= SEVERITY_LOW_FREQ) //ONLY RING IF PREVIOUSLY MUTE
+    {
+      if (HighPltPressAlarmCnt >= ((int)(COUNT_100ms))) //10 loop counts = 100ms;
+      {
+        alarm.action = RING_ALARM;
+    //    alarm.toneFreq = SEVERITY_HIGH_FREQ;
+    //    alarm.timePeriod = SEVERITY_HIGH_TP;
+        alarm.toneFreq = SEVERITY_LOW_FREQ; //TESTING ONLY
+        alarm.timePeriod = SEVERITY_LOW_TP; //TESTING ONLY
+        ErrorNumber = HIGH_PIP;
+      }
+    }
+
+    if (alarm.toneFreq <= SEVERITY_MED_FREQ) //ONLY RING IF PREVIOUSLY MUTE OR PREVIOUS ALARM IS LOWER SEVERITY
+    {
+      if (HighPltPressAlarmCnt >= ((int)(COUNT_100ms))) //10 loop counts = 100ms;
+      {
+        alarm.action = RING_ALARM;
+        alarm.toneFreq = SEVERITY_MED_FREQ;
+        alarm.timePeriod = SEVERITY_MED_TP;
+        ErrorNumber = HIGH_PLT;
+      }
+    }
+    
+    if (alarm.toneFreq <= SEVERITY_HIGH_FREQ)  //ONLY RING IF PREVIOUSLY MUTE OR PREVIOUS ALARM IS LOWER SEVERITY
+    {
+      if (LowPEEPAlarmCnt >= ((int)(COUNT_100ms))) //10 loop counts = 100ms;
+      {
+        alarm.action = RING_ALARM;
+        alarm.toneFreq = SEVERITY_HIGH_FREQ;
+        alarm.timePeriod = SEVERITY_HIGH_TP;
+        ErrorNumber = LOW_PEEP;
+      }
+    }
+  }
+  else
+  {
+    HighPeakPressAlarmCnt = 0;
+    HighPltPressAlarmCnt = 0;
+    LowPEEPAlarmCnt = 0;
+
+    PeepValid = false; //To Prevent False Alarms
+    PltPrsValid = false; //To Prevent False Alarms
+  }
 }
 
 bool timer3InterruptTriggered = false;
@@ -652,59 +820,18 @@ void setup()
 
   plateauPressure = 0.0;
   PEEPressure = 0.0;
-
-
-  //    timCnt = 0,                // Timer interrupt cycle counter used to spread the load over time
-  timerLvl = 0;
+  peakInspPressure = 0.0;
 
   CVmode = VOL_CONT_MODE; //Volume Controlled Mode
 
-#ifdef DC_MOTOR_VNH2SP30
-  megaServo.attach(pin_M1_CW, pin_M1_CCW, pin_M1_PWM, pin_M1_POT);
-#endif
 
   Timer3.initialize(100000);   //microseconds //0.10sec
   //Timer3.attachInterrupt(userInterface);
   Timer3.attachInterrupt(timer3ISR);
 
 #ifdef StepGen
-  //    pinMode(pin_Stepper_DIR, OUTPUT);
-  //    pinMode(pin_Stepper_STEP, OUTPUT);
-  pinMode(pin_Stepper_MS1, OUTPUT);
-  pinMode(pin_Stepper_MS2, OUTPUT);
-  pinMode(pin_Stepper_MS3, OUTPUT);
-  //   pinMode(pin_Stepper_EN,    OUTPUT);
-  pinMode(pin_Stepper_SLP, OUTPUT);
-  //   pinMode(pin_Stepper_RST, OUTPUT);
 
   /*Stepper Motor Detailed Guide with Driver: https://lastminuteengineers.com/a4988-stepper-motor-driver-arduino-tutorial */
-
-  // Reset the position to 0:
-#ifndef AUTO_HOME
-  stepper.setCurrentPosition(0); //if limit switch not installed.
-#endif
-  //if limit switch is installed then move motor to limit switch position and set that position as zero.
-  stepper.setMaxSpeed(defMotorMaxSpeed);
-  stepper.setAcceleration(defMotorMaxAcceleration);
-
-  //Set Motor Step Size using MS1-MS2-MS3 of motor driver
-  /*
-      MS1   MS2   MS3   Microstep Resolution
-      Low   Low   Low   Full step
-      High  Low   Low   Half step
-      Low   High  Low   Quarter step
-      High  High  Low   Eighth step
-      High  High  High  Sixteenth step
-
-  */
-  //Full Step
-  //    digitalWrite(pin_Stepper_STEP, LOW);
-  //    digitalWrite(pin_Stepper_DIR, LOW);
-  digitalWrite(pin_Stepper_MS1, LOW);
-  digitalWrite(pin_Stepper_MS2, LOW);
-  digitalWrite(pin_Stepper_MS3, LOW);
-  stopMove = true;
-  runAtConstantSpeed = false;
 
   Timer1.initialize(200);
   Timer1.attachInterrupt(Timer);
@@ -715,10 +842,6 @@ void setup()
   pinMode(pin_Switch_START, INPUT);
   pinMode(pin_Switch_MODE, INPUT);
 
-#ifdef AUTO_HOME
-  pinMode(pin_LmtSWT_OP1, INPUT);
-#endif
-  pinMode(pin_LmtSWT_OP2, INPUT);
   //    pinMode(pin_LmtSWT_CL1, INPUT);
   //    pinMode(pin_LmtSWT_CL2, INPUT);
 
@@ -739,6 +862,8 @@ void setup()
   //lcd.begin(20, 4);
   lcd.backlight(); //setting lcd backlight
 
+  initFlowSensor();
+
 #ifdef BMP_180
   bmp_180.begin();//initialiazing BMP180
 #ifdef __DEBUG
@@ -753,7 +878,11 @@ void setup()
 #endif
 #endif
 
+  // reserve 200 bytes for the inputString:
+  slave.AckStr.reserve(50);
+
   Serial.begin(SERIAL_BAUD);
+  Serial2.begin(SERIAL_BAUD);
   //#ifdef TX_SERIAL_TELEMETRY
   //    Serial1.begin(SERIAL_BAUD);
   //#endif
@@ -767,7 +896,7 @@ void setup()
 
   while ((millis() - pre_millis) < WARM_UP_TIME)
   {
-    Serial.println(millis() - pre_millis);
+//    Serial.println(millis() - pre_millis);
     prePressedTimestamp = millis();
     isPressedTime = millis() - prePressedTimestamp;
 
@@ -820,10 +949,6 @@ void setup()
 
   tick1 = millis();
   tick2 = millis();
-
-#ifdef StepGen
-  //    stopMove = false;
-#endif
 }
 
 void devModeFunc() //Developer Mode
@@ -840,45 +965,50 @@ void devModeFunc() //Developer Mode
   }
 }
 
-void limitValues(float &B, float &V, float &P) // prevent values from going outside of their design limits
-{
-}
 void Ventilator_Control()
 {
   static unsigned int Tin = 0;
   static unsigned int Tex = 0;
-  static unsigned int Th = 150; //ms
+  static unsigned int Th = 0; //ms
+  static unsigned int Ttrigger = 300; //ms
   static unsigned long Tcur = 0;
   static unsigned long BreathStartTimestamp = 0;
 
   static float BVin = 0;
   static float BVex = 0;
 
-  static int Vin = 0;
-  static int Vex = 0;
-  static int reqMotorPosInspiration = 0;
+  static long Vin = 0;
+  static long Vex = 0;
+  static long reqMotorPosInspiration = 0;
 
-  static unsigned int init = 1;
+  static boolean init = true;
 
   //    noInterrupts();
-  CVmode = VOL_CONT_MODE; //Proto-1
-  if (init == 1)
+//  CVmode = VOL_CONT_MODE; //Proto-1
+//  assistControl = 0;
+
+  if (init)
   {
     breathLength = (int)(60000 / bpmSetpoint);
     // Take the hold time out of the exhale cycle. Do this to ensure respitory rate is correct.
     Tex = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
     Tin = (int)(Tex * expirationRatioSetpoint);
-    init = 0;
+    if (holdManeuver) Th = holdDur_ms; else Th = 0;
+    init = false;
     Tcur = breathLength;
   }
-#ifdef StepGen
-  digitalWrite(pin_Stepper_MS1, LOW); //Full Step
-  digitalWrite(pin_Stepper_MS2, LOW);
-  digitalWrite(pin_Stepper_MS3, LOW);
-#endif
+
   if (activateVentilatorOperation == 1)
   {
     VentilatorOperationON = 1;
+
+    if (assistControl == 1) {
+      if (patientTriggeredBreath)
+      {
+        Tcur = breathLength; //Start a new inhale Cycle 
+      }
+    }
+
 
     if (Tcur >= breathLength)
     {
@@ -889,37 +1019,47 @@ void Ventilator_Control()
       expirationRatioSetpoint = I_E_SampleSet[(int)reqExpirationRatioIndex - 1];
 
       breathLength = (int)(60000 / bpmSetpoint);
+      if (holdManeuver) Th = holdDur_ms; else Th = 0;
       // Take the hold time out of the exhale cycle. Do this to ensure respitory rate is correct.
       Tex = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
       Tin = (int)(Tex * expirationRatioSetpoint);
+      if (CVmode == VOL_CONT_MODE) {
       BVin = (volumeSetpoint / Tin); //Breathe In Speed in ml/s
       BVex = (volumeSetpoint / Tex); //Breathe Out Speed in ml/s
       Vin = (int)(BVin * MotorSpeedSF); //Breathe In Motor Speed in steps/s
       Vex = (int)(BVex * MotorSpeedSF); //Breathe Out Motor Speed in steps/s
 #ifdef StepGen
-      reqMotorPosInspiration = (int)(volumeSetpoint * MotorVolumeSF); //in Steps
-      reqMotorPosInspiration = constrain(reqMotorPosInspiration, 0, MaxMotorPosition);
-#elif DC_MOTOR_VNH2SP30
-      reqMotorPosInspiration = volumeSetpoint; //in mL (mega Servos maps mL to Pot automatically)
+    reqMotorPosInspiration = (int)(volumeSetpoint * MotorVolumeSF); //in Steps
+    reqMotorPosInspiration = constrain(reqMotorPosInspiration, 0, MECHANICAL_LIMIT);
 #endif
+    }
+    else //PRESS_CONT_MODE 
+    {
+      BVin = ((pressureSetpoint * Pa2cmH2O) / Tin); //Breathe In Speed in cmH2O/s
+      BVex = ((pressureSetpoint * Pa2cmH2O) / Tex); //Breathe Out Speed in cmH2O/s
+      Vin = (int)(BVin * MotorSpeedSF_forPressure); //Breathe In Motor Speed in steps/s
+      Vex = (int)(BVex * MotorSpeedSF_forPressure); //Breathe Out Motor Speed in steps/s
+#ifdef StepGen
+      reqMotorPosInspiration = (int)(pressureSetpoint * MotorPressureSF); //in Steps
+      reqMotorPosInspiration = constrain(reqMotorPosInspiration, 0, MECHANICAL_LIMIT);
+#endif
+    }
       BreathStartTimestamp = millis();
 
-      static int i = 0;
 #ifdef __DEBUG
+          static int i = 0;
            Serial.print("In Ventilator Control: "); Serial.println(i++);
            Serial.print("Breathing Length: "); Serial.println(breathLength);
            Serial.print("Inspiration Time: "); Serial.println(Tin);
            Serial.print("Expiration Time: "); Serial.println(Tex);
            Serial.print("Motor Speed: "); Serial.println(Vin);
-           Serial.print("Motor Current Pos (Exp): "); Serial.println(stepper.currentPosition());
+//         Serial.print("Motor Current Pos (Exp): "); Serial.println(stepper.currentPosition());
            Serial.print("targetPosition: "); Serial.println(reqMotorPosInspiration);
            Serial.print("Breathing Phase: "); Serial.println(breathPhase);
 #endif
     }
     Tcur = millis() - BreathStartTimestamp;
 
-    if (CVmode == VOL_CONT_MODE)
-    {
       if (Tcur <= Tin)
       {
         //              if (breathPhase == EXPIRATION_PHASE)
@@ -927,13 +1067,19 @@ void Ventilator_Control()
         //              }
         breathPhase = INSPIRATION_PHASE;
 #ifdef StepGen
-        stepper.moveTo(InvertDir * reqMotorPosInspiration);
-        stepper.setSpeed(Vin);
-        stopMove = false;
-        runAtConstantSpeed = true;
-#elif DC_MOTOR_VNH2SP30
-        megaServo.setSpeed(Vin);
-        megaServo.writeVolume(reqMotorPosInspiration);
+//        if (TV.measured < volumeSetpoint)
+        slave.enOutputs = true;
+//        slave.stepCmd = reqMotorPosInspiration;
+        slave.stepCmd = (Vin * (samplePeriod2/1000.0f)); //For 10ms //S = v * t
+        slave.period = (long) (1/Vin);
+        if (!setpointAchieved)
+        {
+          Serial2.print("#RUN ");
+          Serial2.print(slave.stepCmd);Serial2.print(" ");
+          Serial2.print(slave.period);Serial2.print(" ");
+          Serial2.println(1); //1 for towards Ambu Bag Dir
+          slave.lastCMD_ID = RUN;
+        }
 #endif
         PEEPMesaureFlag = 0;
       }
@@ -944,41 +1090,38 @@ void Ventilator_Control()
         }
         breathPhase = HOLD_PHASE;
 #ifdef StepGen
-        stepper.moveTo(stepper.currentPosition());
-        stopMove = true; //Immediately stop the motor by blocking run command
-        runAtConstantSpeed = false;
-#elif DC_MOTOR_VNH2SP30
-        megaServo.setSpeed(0);
-        megaServo.stop();
+        slave.enOutputs = false;
+        slave.stepCmd = 0;
+        slave.period = 0;
+        Serial2.println("#STOP");
+        slave.lastCMD_ID = STOP;
 #endif
       }
       else if ((Tcur > (Tin + Th)) && (Tcur < (Tin + Th + Tex)))
       {
-        if (breathPhase == HOLD_PHASE)
+        if (breathPhase == HOLD_PHASE) 
         { //Initializations
           //                    Serial.print("Motor Current Pos (Hold): "); Serial.println(stepper.currentPosition());
         }
         breathPhase = EXPIRATION_PHASE;
 #ifdef StepGen
-        stepper.moveTo(0);
-        stepper.setSpeed(Vex);
-        stopMove = false;
-        runAtConstantSpeed = true;
-#elif DC_MOTOR_VNH2SP30
-        megaServo.setSpeed(Vex);
-        megaServo.writeVolume(0);
-        if (digitalRead(pin_LmtSWT_OP1) == HIGH) //HOME POS
-        {
-          megaServo.setSpeed(0);
-          megaServo.stop();
-        }
+        slave.enOutputs = true;
+        slave.stepCmd = (-1.0 * reqMotorPosInspiration);
+        slave.period = (long) (1/Vex);
+        Serial2.print("#HOME "); Serial2.println(slave.period);
+        slave.lastCMD_ID = HOME;
 #endif
         if ((Tcur >= (Tin + Tex)) && (Tcur < (Tin + Th + Tex)))
         {
           PEEPMesaureFlag = 1;
         }
+
+        if (assistControl == 1) {
+        if ((Tin + Th + Tex - Tcur) < Ttrigger) 
+        {
+          scanBreathingAttempt = true;
+        }        }
       }
-    }
   }
   else
   {
@@ -986,16 +1129,16 @@ void Ventilator_Control()
     VentilatorOperationON = 0;
     breathPhase = WAIT_PHASE;
     Tcur = breathLength; // This will always start inspiration breath cycle on setting switch to start position
+    PeepValid = false; //To Prevent False Alarms
+    PltPrsValid = false; //To Prevent False Alarms
+
 #ifdef StepGen
-    //        stepper.moveTo(stepper.currentPosition());
-    stepper.moveTo(0); // to remove ambu bag for manual bagging in case of emergency
-    stepper.setSpeed(Vex);
-    stopMove = false;
-    runAtConstantSpeed = true;
+    slave.enOutputs = true;
+    slave.stepCmd = (-1.0 * reqMotorPosInspiration);
+    slave.period = (long) (1/Vex); 
+    Serial2.print("#HOME "); Serial2.println(slave.period);
+    slave.lastCMD_ID = HOME;
     PEEPMesaureFlag = 0;
-#elif DC_MOTOR_VNH2SP30
-    megaServo.setSpeed(0);
-    megaServo.stop();
 #endif
   }
   //    interrupts();
@@ -1004,61 +1147,101 @@ void Ventilator_Control()
 #ifdef TX_SERIAL_TELEMETRY
 void GetTelData()
 {
-  static int init = 1;
+
+  static boolean init = true;
   unsigned int TEL_BYTE = 0x00;
-  if (init == 1)
+  if (init)
   {
     TEL.Time = 0;
     TEL.txUpdateRate = 0;
     TEL.txPktCtr = 0;
-    init = 0;
+    TEL.FDCB = 0xFF;
+    init = false;
   }
 
   TEL.Time += (samplePeriod1);
 
-  TEL.mTV = 390.0;//0.0;
-  TEL.mPressure = 20.0;//p_sensor.pressure_gauge_CM;
-  TEL.mFlowRate = 70.0;//0.0; //SLPM
-  TEL.mPEEP = 5.0;//PEEPressure * Pa2cmH2O;
-  TEL.mPltPress = 25.0;//plateauPressure * Pa2cmH2O;
-  TEL.mFiO2 = 0.0;
+  if ((TEL.Time % 20) == 0)
+  {
+    TEL.mTV = TV.measured; //ml
+    //TEL.mTV = constrain(TEL.mTV, 0.0, 1000.0);
+    TEL.mTVinsp = TV.inspiration; //ml
+    TEL.mTVexp = TV.expiration; //ml
+    TEL.mPressure = p_sensor.pressure_gauge_CM; //cmH2O
+    TEL.mFlowRate = FS.Q_SLM; //SLPM
+    TEL.mPEEP = PEEPressure * Pa2cmH2O;
+    TEL.mPltPress = plateauPressure * Pa2cmH2O;
+    TEL.mFiO2 = 0.0;
+    TEL.minuteVentilation = TV.minuteVentilation;
+    TEL.mPeakPressure = peakInspPressure;
+    TEL.mRR = 0.0;
+    TEL.staticCompliance = TV.staticCompliance;
+    TEL.spTrigger = flowTrigger;
 
-  TEL.spTV = reqVolume;
-  TEL.spPressure = reqPressure * Pa2cmH2O;
-  TEL.spFiO2 = 50.0;//0.0;
-  TEL.spPEEP = 0.0 * Pa2cmH2O;
-  TEL.spBPM = reqBPM;
-  TEL.spIE_Inhale = I_E_InpsFactor[reqExpirationRatioIndex - 1];
-  TEL.spIE_Exhale = I_E_ExpFactor[reqExpirationRatioIndex - 1];
-  TEL.patientWeight = patientWeight;
+  //  TEL.spTV = (int)(reqVolume);
+  //  TEL.spInsPressure = int(reqPressure * Pa2cmH2O);
+    TEL.spTV = (int)(spStatus.newTV);
+    TEL.spInsPressure = int(spStatus.newOP  * Pa2cmH2O);
+    TEL.spExpPressure = 5 * Pa2cmH2O; //0;
 
-  TEL.statusByteError = ErrorNumber;
-  TEL_BYTE = 0x00;
-  TEL_BYTE |= breathPhase & 0x03;
-  if (CVmode == PRESS_CONT_MODE)  TEL_BYTE |= 0x04;
-  TEL_BYTE &= 0xF7; //Mandatory Mode : D3 = 0
-  if (VentilatorOperationON == 1)  TEL_BYTE |= 0x10;
-  TEL_BYTE |= (selfTestProg & 0x03) << 5;
-  if (selfTestStatus == ST_PASS)  TEL_BYTE |= 0x80;
-  TEL.statusByte1 = TEL_BYTE;
+    TEL.spFiO2 = 0;
+  //  TEL.spBPM = (int)(reqBPM);
+  //  TEL.spIE_Inhale = I_E_InpsFactor[reqExpirationRatioIndex - 1];
+  //  TEL.spIE_Exhale = I_E_ExpFactor[reqExpirationRatioIndex - 1];
+    TEL.spBPM = (int)(spStatus.newBPM);
+    TEL.spIE_Inhale = I_E_InpsFactor[spStatus.newI_E_Section - 1];
+    TEL.spIE_Exhale = I_E_ExpFactor[spStatus.newI_E_Section - 1];
+    TEL.patientWeight = patientWeight;
+
+    TEL.statusByteError = ErrorNumber;
+    TEL_BYTE = 0x00;
+    TEL_BYTE |= breathPhase & 0x03;
+    if (CVmode == PRESS_CONT_MODE)  TEL_BYTE |= 0x04;
+    if (assistControl == 1)  TEL_BYTE |= 0x08;
+    if (VentilatorOperationON == 1)  TEL_BYTE |= 0x10;
+    if (selfTestProg == ST_IN_PROG)
+      TEL_BYTE |= 0x20;
+    else if ((selfTestProg == ST_COMPLETE) && (selfTestStatus == ST_FAIL))
+      TEL_BYTE |= 0x40;
+    else if ((selfTestProg == ST_COMPLETE) && (selfTestStatus == ST_PASS))
+      TEL_BYTE |= 0x60;
+    else //NOT INIT
+      TEL_BYTE &= 0x9F; //Clear D5 and D6
+    if (spStatusAllowChange == 1) TEL_BYTE |= 0x80; //D7 High if Settings Unsaved
+
+    TEL.statusByte1 = TEL_BYTE;
+    TEL.FDCB = 0xCC;
+  }
 }
 #endif
+
+
+
 void loop()
 {
   WarmUpFlag = 0;
 #ifdef StepGen
-  digitalWrite(pin_Stepper_SLP, HIGH);
+//  digitalWrite(pin_Stepper_SLP, HIGH);
 #endif
   if (millis() > (tick1 + samplePeriod1))
   {
     tick1 = millis();
     readSensors();
+    Monitoring();
+
+    if (slave.strComplete == true)
+    {
+      decodeSlaveTel();
+      slave.AckStr = "";
+      slave.strComplete = false;
+    }
+    
 
     if (selfTestProg != ST_COMPLETE)
       selfTest();
     else
     {
-      alarmControl();
+//      alarmControl();
     }
 #ifdef ActiveBeeper
     beep(); //alarmAction = RING_ALARM, SNOOZE_ALARM; alarmSeverity = SEVERITY_HIGH, SEVERITY_MED, SEVERITY_LOW, SEVERITY_MUTE
@@ -1082,4 +1265,54 @@ void loop()
     userInterface();
     timer3InterruptTriggered = false;
   }
+}
+
+
+/*
+  SerialEvent occurs whenever a new data comes in the hardware serial RX. This
+  routine is run between each time loop() runs, so using delay inside loop can
+  delay response. Multiple bytes of data may be available.
+*/
+void serialEvent2() {
+    while (Serial.available()) {
+      // get the new byte:
+      char inChar = (char)Serial.read();
+      // add it to the inputString:
+      slave.AckStr += inChar;
+      // if the incoming character is a newline, set a flag so the main loop can
+      // do something about it:
+      if (inChar == '\r') {
+        slave.strComplete = true;
+      }
+    }
+}
+
+void decodeSlaveTel()
+{
+  String message = "";
+    for (int i = 0; i < slave.AckStr.length(); i++)
+    {
+      if (slave.AckStr[i] == '#')
+      {
+        if ((slave.AckStr[i+1] == 'R') && (slave.AckStr[i+2] == 'U') && (slave.AckStr[i+3] == 'N'))
+        {
+          message = slave.AckStr[i+5];
+          slave.runAck = message.toInt();
+          break;
+        }
+        else if ((slave.AckStr[i+1] == 'S') && (slave.AckStr[i+2] == 'T') && (slave.AckStr[i+3] == 'O') && (slave.AckStr[i+4] == 'P'))
+        {
+          message = slave.AckStr[i+5];
+          slave.stopAck = message.toInt();
+          break;
+        }
+        else if ((slave.AckStr[i+1] == 'H') && (slave.AckStr[i+2] == 'O') && (slave.AckStr[i+3] == 'M') && (slave.AckStr[i+4] == 'E'))
+        {
+          message = slave.AckStr[i+5];
+          slave.homeAck = message.toInt();  
+          Homing_Done_F = slave.homeAck;
+          break;        
+        }
+      }
+    }
 }

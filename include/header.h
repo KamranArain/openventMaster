@@ -17,13 +17,13 @@
        some changes have been made to havee a lower default volume in case the machine is used
        with an infant to prevent damaging their lungs with an adult setting.*/
 
-#define minBPM 10.0             // minimum respiratory speed
-#define defaultBPM 15.0         // default respiratory speed
+#define minBPM 8.0             // minimum respiratory speed
+#define defaultBPM 12.0         // default respiratory speed
 #define stepBPM 1.0             // adjustment step for respiratory speed
-#define maxBPM 30.0             // maximum respiratory speed
+#define maxBPM 35.0             // maximum respiratory speed
 #define maxBPMchange 0.2        // maximum respiratory speed change in proportion of final value per beat (1=100%)
 #define minVolume 200.0         // minimum respiratory volume in milliliters
-#define defaultVolume 400.0     // default respiratory volume in milliliters
+#define defaultVolume 500.0     // default respiratory volume in milliliters
 #define stepVolume 100.0        // adjustment step for respiratory volume in milliliters
 #define maxVolume 800.0         // maximum respiratory volume in milliliters
 #define maxVolumeChange 0.25    // maximum respiratory volume change in proportion of final value per beat (1=100%)
@@ -59,16 +59,15 @@
 #define defMotorAcceleration 5000     // Acceleration for 1 liter / second (inverse square of flow)
 #define defMotorMaxSpeed 2000         // Maximum Allowed Speed
 #define defMotorMaxAcceleration 30000 // deceleration when pressure limit reached
-#define defMotorVolumeRatio 1.15      // Ratio of distance in steps to air volume in step per milliliter.
-#define InvertDir -1.0
-#define MaxMotorPosition 458 //For OVPD-1
+#define defMotorVolumeRatio 1.0//1.15      // Ratio of distance in steps to air volume in step per milliliter.
+#define defMotorSpeed_forPCV 1500            // Speed for 1 cmH2O/second
+#define defMotorPressureRatio 1.0//1.15      // Ratio of distance in steps to air pressure in step per cmH2O.
+#define maxLinearDisplacement 300 //mm
+#define motorSteps_per_mm 644 //number of steps
+#define maxMotorSteps motorSteps_per_mm*maxLinearDisplacement
+#define MECHANICAL_LIMIT 600 //For OVPD-1
 /*******************************   HARDWARE OPTIONS   *******************************
    It's normal for the program to not compile if some of these are undefined as they need an alternative*/
-
-#ifdef DC_MOTOR_VNH2SP30
-#define minPWM 0   // minPWM
-#define maxPWM 255 // maxPWM
-#endif
 
 //******************************   IMPIED DEFINITIONS  ********************************
 #ifdef ActiveBeeper
@@ -82,15 +81,43 @@
 #define I2C_ADDRESS_MS4525DO 0x28 /**< 7-bit address. Depends on the order code (this is for code "I") */
 #endif
 
-#ifdef Beeper
-#define RING_ALARM 0
-#define SNOOZE_ALARM 1
 
-#define SEVERITY_HIGH 1000
-#define SEVERITY_MED 500
-#define SEVERITY_LOW 250
-#define MUTE_ALARM 0
-#endif
+
+#define RING_ALARM 1
+#define SNOOZE_ALARM 0
+
+//Frequency in HERTZ
+#define SEVERITY_HIGH_FREQ 3000
+#define SEVERITY_MED_FREQ 2000
+#define SEVERITY_LOW_FREQ 1000
+
+//Durations in milliseconds
+#define SEVERITY_HIGH_TP 250 
+#define SEVERITY_MED_TP 750
+#define SEVERITY_LOW_TP 1500
+
+//******************************   ERROR NUMBERS  ********************************
+#define BATTERY_IN_USE 1
+#define CIRCUIT_INTEGRITY_FAILED 2
+#define HIGH_RR 3
+#define HIGH_FIO2 4
+#define HIGH_PEEP 5
+#define HIGH_PLT 6
+#define HIGH_PIP 7
+#define LOW_PIP 8
+#define LOW_FIO2 9
+#define LOW_PEEP 10
+#define LOW_PLT 11
+#define OXYGEN_FAILURE 12
+#define LOW_TV 13
+#define HIGH_TV 14
+#define START_SWT_ERROR 15
+#define LOW_MV 16
+#define HIGH_MV 17
+#define VENT_CKT_DC 18
+#define MECH_INTEGRITY_FAILED 19
+#define HOMING_NOT_DONE_ERROR 20
+#define OPS_96_HRS 21
 
 //******************************   MACROS  ********************************
 
@@ -160,20 +187,21 @@
 #define pin_Knob_3 A14 //VR3 // Tidal Volume
 #define pin_Knob_4 A15 //VR4 // Max Pressure
 
-#define pin_LmtSWT_OP1 46 //HOME POSITION
-#define pin_LmtSWT_OP2 47
+//#define pin_LmtSWT_OP1 46 //HOME POSITION
+//#define pin_LmtSWT_OP2 47
 #define pin_LmtSWT_CL1 48
 #define pin_LmtSWT_CL2 49
 
 #ifdef stepDirMotor
-#define pin_Stepper_DIR 4
-#define pin_Stepper_STEP 3
-#define pin_Stepper_SLP 2 //Active Low
+//#define pin_Stepper_DIR 4
+//#define pin_Stepper_STEP 3
+//#define pin_Stepper_SLP 2 //Active Low
 //#define pin_Stepper_RST      15 //Active Low
-#define pin_Stepper_MS3 25
-#define pin_Stepper_MS2 24
-#define pin_Stepper_MS1 23
-//#define pin_Stepper_EN     19 //Active Low
+//#define pin_Stepper_MS3 25
+//#define pin_Stepper_MS2 24
+//#define pin_Stepper_MS1 23
+//#define pin_Stepper_EN1     23 //Active Low
+//#define pin_Stepper_EN2     24 //Active Low
 
 //Instructions for using moveTo function of Accel Stepper Class
 // moveTo() also recalculates the speed for the next step.
@@ -187,12 +215,6 @@
 
 #endif
 
-#ifdef DC_MOTOR_VNH2SP30
-#define pin_M1_CW 10 //1InA
-#define pin_M1_CCW 9 //1InB
-#define pin_M1_PWM 8
-#define pin_M1_CS A0
-#endif
 #define pin_M1_POT A11 //VR5
 
 #define SERIAL_BAUD 115200 // Serial port communication speed
@@ -206,8 +228,8 @@
 #define ee_MVolSF ee_MSpdSF + (sizeof(float));
 #endif
 
-#define samplePeriod1 10 // 10 ms sensor sampling period
-#define samplePeriod2 25 // 25 ms sensor sampling period
+#define samplePeriod1 5 // 5 ms sampling period
+#define samplePeriod2 10 // 10 ms Control Loop
 
 #define highPressureAlarmDetect 10 // delay before an overpressure alarm is triggered (in samplePeriod increments)
 
@@ -227,13 +249,6 @@ SFE_BMP180 bmp180;
 #include <EEPROM.h> // read / write to the processor's internal EEPROM
 #endif
 
-#ifdef StepGen
-#include <AccelStepper.h> // Stepper / servo library with step pulse / dir interface
-#endif                    //  By Mike McCauley - http://www.airspayce.com/mikem/arduino/AccelStepper
-
-#ifdef DC_MOTOR_VNH2SP30
-#endif
-#include "MegaServo.h" //Included with sketch
 
 #ifdef StepGen
 #include "TimerOne.h" // Timer component
@@ -243,6 +258,19 @@ SFE_BMP180 bmp180;
 
 #include "TimerThree.h" // Timer3 component
 
+#ifdef PID_CONTROL
+
+//----------------------------------------------------------------------
+//PID stuff for stepper motors
+//----------------------------------------------------------------------
+#include <PID_v1.h>
+
+#define max_stepCmd 20000.0  //max output value from PID
+#define min_stepCmd -20000.0  //min output value from PID
+#define PID_sample_time 10  //how often the PID algorithm evaluates in ms
+#define deadband 3        // +/- number of counts to not respond 6
+
+#endif
 //***************************************   FUNCTION PROTOTYPES   ***************************************
 #ifdef StepGen
 void Timer();
@@ -251,16 +279,10 @@ void setMicroSteps(int MicrostepResolution);
 
 void selfTest();
 void readSensors();
-void meas();
+void Monitoring();
 void alarmControl();
 void devModeFunc();
-void limitValues(float &B, float &V, float &P);
 void Ventilator_Control();
-
-boolean checkValues();
-#ifdef AUTO_HOME
-void SetHomePosition(void);
-#endif
 
 #ifdef Beeper
 void beep();
@@ -273,6 +295,13 @@ void GetTelData();
 //#endif
 void eeput(int n); // records to EEPROM (only if values are validated)
 void eeget();
+
+#ifdef PID_CONTROL
+void PID_setup();
+void calc_PID();
+#endif
+
+void decodeSlaveTel();
 //***************************************   END   ***************************************
 
 struct P_Sensor
@@ -297,6 +326,65 @@ struct setpointStatus
   int newTV;          //Tidal Volume Setpoint
   int newOP;          //Overpressure limit
 };
+
+struct Alarm
+{
+  unsigned int action = SNOOZE_ALARM;
+  unsigned int toneFreq = SNOOZE_ALARM;
+  unsigned int timePeriod = SNOOZE_ALARM; //milliseconds
+};
+
+struct TidalVolume
+{
+  float measured = 0.0;
+  float inspiration = 0.0;
+  float expiration = 0.0;
+  float minuteVentilation = 0.0;
+  float staticCompliance = 0.0; // (ml / cmH2O)
+
+};
+
+struct Slave
+{
+  long stepCmd = 0.0;
+  long period = 0.0;
+  boolean enOutputs = false;
+  boolean M1_LmtSwt_Hit_F = false;
+  boolean M2_LmtSwt_Hit_F = false;
+  int lastCMD_ID = 0;
+  int runAck = 0;
+  int stopAck = 0;
+  int homeAck = 0;
+  boolean strComplete = false;
+  String AckStr = "";
+};
+
+#define TIME_VAR 0
+#define FLOW_VAR 1
+#define PRESS_VAR 2
+#define VOL_VAR 3
+
+#define RUN   1
+#define STOP  2
+#define HOME  3
+
+#define HOMING_CMD_NOT_SENT 0
+#define CMD_RECEIVED 1
+#define CMD_COMPLETE 2
+#define CMD_ERROR    3
+
+#ifdef PID_CONTROL
+
+struct PID_TYPE
+{
+  double setpoint = 500.0;
+  double output = 0.0;
+  double input = 0.0;
+  double Kp = 0.03;  //proportional gain
+  double Ki = 0.0;
+  double Kd = 0.0;
+};
+#endif
 //***************************************   END   ***************************************
 #endif
 /* NOTE*****************************************************************************************************************8
