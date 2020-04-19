@@ -31,7 +31,6 @@ extern int pressSnsrInUse;
 extern int VentilatorOperationON;
 extern int OkButton;
 extern int SnoozeButton;
-extern int MotorSpeedSF; // Speed for 1 liter/second
 extern int Motor1_HomePos_Hit_F;
 extern int Motor2_HomePos_Hit_F;
 extern int CVmode;
@@ -49,7 +48,6 @@ extern char  tempChar[20];
 extern float plateauPressure, /* Plateau pressure is the pressure that is applied by the ventilator to the small airways and alveoli.
                                  It is measured at end-inspiration with an inspiratory hold maneuver.*/
        PEEPressure,              // Positive end-expiratory pressure (PEEP)
-       MotorVolumeSF,         // Ratio of distance in steps to air volume in step per milliliter.
        reqBPM,       // respiratory frequency
        reqVolume,             // respiratory volume in milliliters
        reqPressure;           // compression for the ambu-bag in Pa
@@ -448,8 +446,8 @@ void userInterface(void)
                 PEEPressure * Pa2cmH2O /* This is measured PEEP*/,
                 selfTestProg /* This is SelfTestInProgl*/,
                 ST_COMPLETE /* This is CalibInProg*/,
-                MotorSpeedSF /* This is SpeedSF*/,
-                MotorVolumeSF /* This is StepSD*/);
+                0 /* This is SpeedSF*/,
+                0 /* This is StepSD*/);
 #ifdef DEBUG
 //    Serial.print("Home Pos Hit Position: "); Serial.println(homePosHitMotorPos);
 //    Serial.print("OP2 Hit Position: "); Serial.println(OP2HitMotorPos);

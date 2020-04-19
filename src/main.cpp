@@ -72,14 +72,6 @@ float volumeSetpoint;          // respiratory volume in milliliters
 float pressureSetpoint;        // compression for the ambu-bag in Pa
 float expirationRatioSetpoint; // The proportion of each breathing cycle that is spent breathing in compared to breathing out
 
-int   MotorSpeedSF, // Speed for 1 liter/second
-      // Ratio of distance in steps to air volume in step per milliliter.
-      MotorAccelerationSF, // Acceleration for 1 liter / second
-      MotorMaxAcceleration;
-int MotorSpeedSF_forPressure; //
-float MotorVolumeSF;
-float MotorPressureSF;
-
 int breathPhase = WAIT_PHASE;
 int selfTestProg = ST_NOT_INIT; // Selft Test is Implemented
 int selfTestStatus = ST_PASS;   // Selft Test is Implemented
@@ -100,7 +92,7 @@ int CVmode = VOL_CONT_MODE;// CV or CP mode indicator;
 int assistControl = 0;
 boolean scanBreathingAttempt = false;
 boolean patientTriggeredBreath = false;
-boolean holdManeuver = false;
+boolean holdManeuver = true;
 boolean setpointAchieved = false;
 int holdDur_ms = 150;
 //int triggerVariable = FLOW_VAR;
@@ -155,11 +147,6 @@ boolean checkValues()
   if (isnan(reqBPM)) isOk = false;                    // Check for malformed floating point values (NaN)
   if (isnan(reqVolume)) isOk = false;
   if (isnan(reqPressure)) isOk = false;
-
-//  if (MotorSpeedSF < minPWM) isOk = false;
-//  if (MotorSpeedSF > maxPWM) isOk = false;
-//  if (isnan(MotorSpeedSF)) isOk = false;                    // Check for malformed floating point values (NaN)
-//  if (isnan(MotorVolumeSF)) isOk = false;                    // Check for malformed floating point values (NaN)
 
   return isOk;
 }
@@ -237,10 +224,6 @@ void eeput(int n) // records to EEPROM (only if values are validated)
     eeAddress += sizeof(float);
     EEPROM.put(eeAddress, reqPressure);
     eeAddress += sizeof(float);
-    EEPROM.put(eeAddress, MotorSpeedSF);
-    eeAddress += sizeof(float);
-    EEPROM.put(eeAddress, MotorVolumeSF);
-    eeAddress += sizeof(float);
   }
 #endif
 }
@@ -251,15 +234,6 @@ void eeget()
   reqVolume = defaultVolume;
   reqPressure = defaultPressure;
   reqExpirationRatioIndex = defaultExpirationRatioIndex;
-#ifdef StepGen
-  MotorSpeedSF = defMotorSpeed;
-  MotorVolumeSF = defMotorVolumeRatio;
-  MotorSpeedSF_forPressure = defMotorSpeed_forPCV;
-  MotorPressureSF = defMotorPressureRatio;
-
-  MotorAccelerationSF = defMotorAcceleration;
-  MotorMaxAcceleration = defMotorMaxAcceleration;
-#endif
 //  Serial.print("Read Default Settings\n");  //Arduino gets stuck if comment this line
 }
 
@@ -295,7 +269,6 @@ void Timer()
 void selfTest()
 {
   static boolean ctr = 0;
-  static unsigned long period_us = (unsigned long) ((1.0f / 12000.0f) * 1000000.0f); //12000 steps per second
   ErrorNumber = 0;
   selfTestStatus = ST_PASS;
   selfTestProg   = ST_IN_PROG;
@@ -304,7 +277,7 @@ void selfTest()
 #ifdef AUTO_HOME
   if (Homing_Done_F == 0)
   {
-    if (ctr == 0) { Serial2.print("#HOME "); Serial2.print(period_us); Serial2.println(); 
+    if (ctr == 0) { Serial2.println("#HOME 2000"); //2000us
     slave.lastCMD_ID = HOME; }
     else {ctr++; if (ctr == (1000/samplePeriod1)) ctr = 0;}        
 
@@ -584,13 +557,6 @@ void readSensors() // Read Values from Installed Sensor
   FS.Q_SLM = getFlowValue();
   #endif
 
-/*
-  Serial.print("$");
-  Serial.print(FS.Q_SLM, 5);
-  Serial.print(" ");
-  Serial.print(TV.measured, 5);
-  Serial.print(";");
-*/
 
 }
 
@@ -616,6 +582,7 @@ void Monitoring()
     case INSPIRATION_PHASE:
       if (initInsp) {
         TV.inspiration = 0.0; TV.measured = 0.0;
+        setpointAchieved = false;
         peakInspPressure = p_sensor.pressure_gauge_CM * cmH2O_to_Pa;
         initInsp = false;
       }
@@ -699,6 +666,15 @@ void Monitoring()
       patientTriggeredBreath = false;
       break;
   }
+
+  
+  Serial.print("$");
+  Serial.print(FS.Q_SLM, 5);
+  Serial.print(" ");
+  Serial.print(TV.measured, 5);
+  Serial.print(";");
+
+
 }
 
 /*
@@ -967,6 +943,9 @@ void devModeFunc() //Developer Mode
 
 void Ventilator_Control()
 {
+  static boolean initIns = false;
+  static boolean initHld = false;
+  static boolean initExp = false;
   static unsigned int Tin = 0;
   static unsigned int Tex = 0;
   static unsigned int Th = 0; //ms
@@ -974,12 +953,16 @@ void Ventilator_Control()
   static unsigned long Tcur = 0;
   static unsigned long BreathStartTimestamp = 0;
 
-  static float BVin = 0;
-  static float BVex = 0;
+  static float reqMotorPos = 0.0; //mm
+  static float Vin = 0.0; //mm/s
+  static float Vex = 0.0;  //mm/s
+  static float RPMin   = 0.0;
+  static float RPMex   = 0.0;
 
-  static long Vin = 0;
-  static long Vex = 0;
-  static long reqMotorPosInspiration = 0;
+  static long stepIn = 0;
+  static long stepEx = 0;
+  static long periodIn = 0; //us
+  static long periodEx = 0; //us
 
   static boolean init = true;
 
@@ -1024,25 +1007,18 @@ void Ventilator_Control()
       Tex = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
       Tin = (int)(Tex * expirationRatioSetpoint);
       if (CVmode == VOL_CONT_MODE) {
-      BVin = (volumeSetpoint / Tin); //Breathe In Speed in ml/s
-      BVex = (volumeSetpoint / Tex); //Breathe Out Speed in ml/s
-      Vin = (int)(BVin * MotorSpeedSF); //Breathe In Motor Speed in steps/s
-      Vex = (int)(BVex * MotorSpeedSF); //Breathe Out Motor Speed in steps/s
-#ifdef StepGen
-    reqMotorPosInspiration = (int)(volumeSetpoint * MotorVolumeSF); //in Steps
-    reqMotorPosInspiration = constrain(reqMotorPosInspiration, 0, MECHANICAL_LIMIT);
-#endif
+        reqMotorPos = volumeSetpoint / LINEAR_FACTOR_VOLUME; //mm
+        Vin = reqMotorPos / (Tin / 1000.0f); // mm/s
+        Vex = reqMotorPos / (Tex / 1000.0f); // mm/s
+        RPMin = (Vin / LIN_MECH_mm_per_rev) * 60.0;
+        RPMin = (Vex / LIN_MECH_mm_per_rev) * 60.0;
+        stepIn = (long)((reqMotorPos / LIN_MECH_mm_per_rev) * STEPPER_MICROSTEP * STEPPER_PULSES_PER_REV);
+        stepEx = (long)(stepIn + ((2.0 / LIN_MECH_mm_per_rev) * STEPPER_MICROSTEP * STEPPER_PULSES_PER_REV));
+        periodIn = (long)(((Tin / 1000.0) / stepIn) * 1000000); //us
+        periodEx = (long)(((Tex / 1000.0) / stepIn) * 1000000); //us
     }
     else //PRESS_CONT_MODE 
     {
-      BVin = ((pressureSetpoint * Pa2cmH2O) / Tin); //Breathe In Speed in cmH2O/s
-      BVex = ((pressureSetpoint * Pa2cmH2O) / Tex); //Breathe Out Speed in cmH2O/s
-      Vin = (int)(BVin * MotorSpeedSF_forPressure); //Breathe In Motor Speed in steps/s
-      Vex = (int)(BVex * MotorSpeedSF_forPressure); //Breathe Out Motor Speed in steps/s
-#ifdef StepGen
-      reqMotorPosInspiration = (int)(pressureSetpoint * MotorPressureSF); //in Steps
-      reqMotorPosInspiration = constrain(reqMotorPosInspiration, 0, MECHANICAL_LIMIT);
-#endif
     }
       BreathStartTimestamp = millis();
 
@@ -1062,55 +1038,59 @@ void Ventilator_Control()
 
       if (Tcur <= Tin)
       {
-        //              if (breathPhase == EXPIRATION_PHASE)
-        //              {// Initializations
-        //              }
+        if (initIns)
+        {
+          slave.runAck = 0;
+          initHld = true;
+          initIns = false;
+          initExp = true;
+        }        
         breathPhase = INSPIRATION_PHASE;
-#ifdef StepGen
 //        if (TV.measured < volumeSetpoint)
-        slave.enOutputs = true;
-//        slave.stepCmd = reqMotorPosInspiration;
-        slave.stepCmd = (Vin * (samplePeriod2/1000.0f)); //For 10ms //S = v * t
-        slave.period = (long) (1/Vin);
-        if (!setpointAchieved)
+        if (slave.runAck == 0) //!setpointAchieved && //CMD NOT RECEIVED
         {
           Serial2.print("#RUN ");
-          Serial2.print(slave.stepCmd);Serial2.print(" ");
-          Serial2.print(slave.period);Serial2.print(" ");
+          Serial2.print(stepIn);Serial2.print(" ");
+          Serial2.print(periodIn);Serial2.print(" ");
           Serial2.println(1); //1 for towards Ambu Bag Dir
           slave.lastCMD_ID = RUN;
         }
-#endif
         PEEPMesaureFlag = 0;
       }
       else if ((Tcur > Tin) && (Tcur <= (Tin + Th)))
       {
-        if (breathPhase == INSPIRATION_PHASE)
-        { //Initialization
-        }
+        if (initHld)
+        {
+          slave.stopAck = 0;
+          initHld = false;
+          initIns = true;
+          initExp = true;
+        }        
         breathPhase = HOLD_PHASE;
-#ifdef StepGen
-        slave.enOutputs = false;
-        slave.stepCmd = 0;
-        slave.period = 0;
-        Serial2.println("#STOP");
+        if (slave.stopAck == 0) //CMD NOT RECEIVED
+          Serial2.println("#STOP");
         slave.lastCMD_ID = STOP;
-#endif
       }
       else if ((Tcur > (Tin + Th)) && (Tcur < (Tin + Th + Tex)))
       {
-        if (breathPhase == HOLD_PHASE) 
-        { //Initializations
-          //                    Serial.print("Motor Current Pos (Hold): "); Serial.println(stepper.currentPosition());
-        }
+        if (initExp)
+        {
+          slave.runAck = 0;
+          initHld = true;
+          initIns = true;
+          initExp = false;
+        }                
         breathPhase = EXPIRATION_PHASE;
-#ifdef StepGen
-        slave.enOutputs = true;
-        slave.stepCmd = (-1.0 * reqMotorPosInspiration);
-        slave.period = (long) (1/Vex);
-        Serial2.print("#HOME "); Serial2.println(slave.period);
-        slave.lastCMD_ID = HOME;
-#endif
+
+        if (slave.runAck == 0) //CMD NOT RECEIVED
+        {
+          Serial2.print("#RUN ");
+          Serial2.print(stepEx);Serial2.print(" ");
+          Serial2.print(periodEx);Serial2.print(" ");
+          Serial2.println(0); //0 for away from Ambu Bag Dir
+          slave.lastCMD_ID = RUN;
+        }
+
         if ((Tcur >= (Tin + Tex)) && (Tcur < (Tin + Th + Tex)))
         {
           PEEPMesaureFlag = 1;
@@ -1133,10 +1113,7 @@ void Ventilator_Control()
     PltPrsValid = false; //To Prevent False Alarms
 
 #ifdef StepGen
-    slave.enOutputs = true;
-    slave.stepCmd = (-1.0 * reqMotorPosInspiration);
-    slave.period = (long) (1/Vex); 
-    Serial2.print("#HOME "); Serial2.println(slave.period);
+    Serial2.println("#HOME 2000");
     slave.lastCMD_ID = HOME;
     PEEPMesaureFlag = 0;
 #endif
@@ -1302,13 +1279,13 @@ void decodeSlaveTel()
         }
         else if ((slave.AckStr[i+1] == 'S') && (slave.AckStr[i+2] == 'T') && (slave.AckStr[i+3] == 'O') && (slave.AckStr[i+4] == 'P'))
         {
-          message = slave.AckStr[i+5];
+          message = slave.AckStr[i+6];
           slave.stopAck = message.toInt();
           break;
         }
         else if ((slave.AckStr[i+1] == 'H') && (slave.AckStr[i+2] == 'O') && (slave.AckStr[i+3] == 'M') && (slave.AckStr[i+4] == 'E'))
         {
-          message = slave.AckStr[i+5];
+          message = slave.AckStr[i+6];
           slave.homeAck = message.toInt();  
           Homing_Done_F = slave.homeAck;
           break;        

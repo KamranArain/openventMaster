@@ -55,17 +55,12 @@
        With default parameters, the whole compression can become as short as 250 ms
 */
 
-#define defMotorSpeed 1500            // Speed for 1 liter/second
-#define defMotorAcceleration 5000     // Acceleration for 1 liter / second (inverse square of flow)
-#define defMotorMaxSpeed 2000         // Maximum Allowed Speed
-#define defMotorMaxAcceleration 30000 // deceleration when pressure limit reached
-#define defMotorVolumeRatio 1.0//1.15      // Ratio of distance in steps to air volume in step per milliliter.
-#define defMotorSpeed_forPCV 1500            // Speed for 1 cmH2O/second
-#define defMotorPressureRatio 1.0//1.15      // Ratio of distance in steps to air pressure in step per cmH2O.
-#define maxLinearDisplacement 300 //mm
-#define motorSteps_per_mm 644 //number of steps
-#define maxMotorSteps motorSteps_per_mm*maxLinearDisplacement
-#define MECHANICAL_LIMIT 600 //For OVPD-1
+#define FULL_SCALE_VOLUME             800.0f  //ml
+#define FULL_SCALE_LENGTH             35.0f  //mm
+#define LINEAR_FACTOR_VOLUME          22.9f
+#define LIN_MECH_mm_per_rev           5.0f
+#define STEPPER_MICROSTEP             2.0f
+#define STEPPER_PULSES_PER_REV        200.0f
 /*******************************   HARDWARE OPTIONS   *******************************
    It's normal for the program to not compile if some of these are undefined as they need an alternative*/
 
@@ -346,11 +341,6 @@ struct TidalVolume
 
 struct Slave
 {
-  long stepCmd = 0.0;
-  long period = 0.0;
-  boolean enOutputs = false;
-  boolean M1_LmtSwt_Hit_F = false;
-  boolean M2_LmtSwt_Hit_F = false;
   int lastCMD_ID = 0;
   int runAck = 0;
   int stopAck = 0;
