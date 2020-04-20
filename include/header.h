@@ -296,6 +296,7 @@ void PID_setup();
 void calc_PID();
 #endif
 
+void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String dir="0");
 void decodeSlaveTel();
 //***************************************   END   ***************************************
 

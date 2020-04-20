@@ -69,8 +69,8 @@ float SFM3x00::getvalue()
 	mycrc = crc8(a, mycrc); // let first byte through CRC calculation
 	mycrc = crc8(b, mycrc); // and the second byte too
 	if (mycrc != crc) { // check if the calculated and the received CRC byte matches
-		Serial.println("Error: wrong CRC");
-		return 0.0;
+	//	Serial.println("Error: wrong CRC");
+	//	return 0.0;
 	}
 	a = (a << 8) | b; // combine the two received bytes to a 16bit integer value
 	// a >>= 2; // remove the two least significant bits

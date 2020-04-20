@@ -243,10 +243,12 @@ int OP2HitMotorPos = 0;
 #ifdef StepGen
 void Timer()
 {
-  if (CVmode == VOL_CONT_MODE) {
+/*  if (CVmode == VOL_CONT_MODE) {
   if ((abs(TV.inspiration - volumeSetpoint) <= 20.0) && (breathPhase == INSPIRATION_PHASE) && (!setpointAchieved))
   {
-    Serial2.println("#STOP");
+    Serial.println("STOP: Volume Achieved");
+//    Serial2.print("#STOP\r");
+    txSlaveCMD(STOP);
     slave.lastCMD_ID = STOP; 
     setpointAchieved = true;
   }
@@ -256,12 +258,15 @@ void Timer()
   {
     if ((abs(p_sensor.pressure_gauge_CM - (pressureSetpoint*Pa2cmH2O)) <= 1.0) && (breathPhase == INSPIRATION_PHASE) && (!setpointAchieved))
     {
-      Serial2.println("#STOP");
+    Serial.println("STOP: Pressure Achieved");
+//    Serial2.print("#STOP\r");
+      txSlaveCMD(STOP);
       slave.lastCMD_ID = STOP; 
       setpointAchieved = true;
     }
     else    setpointAchieved = false;  
   }
+*/
 }
 #endif
 
@@ -275,10 +280,15 @@ void selfTest()
 
 #ifdef StepGen
 #ifdef AUTO_HOME
+
+Homing_Done_F = slave.homeAck;
+
   if (Homing_Done_F == 0)
-  {
-    if (ctr == 0) { Serial2.println("#HOME 2000"); //2000us
-    slave.lastCMD_ID = HOME; }
+  {    
+    if (ctr == 0) { 
+      //Serial2.print("#HOME 2000"); //2000us
+      txSlaveCMD(HOME, 2000);
+      slave.lastCMD_ID = HOME; }
     else {ctr++; if (ctr == (1000/samplePeriod1)) ctr = 0;}        
 
     ErrorNumber     = HOMING_NOT_DONE_ERROR;
@@ -293,20 +303,10 @@ void selfTest()
   }
   else if (Homing_Done_F == 2)
   {
-    if (slave.stopAck = 0)
-    {
-      Serial2.println("#STOP");
-      slave.lastCMD_ID = STOP; 
-    }
     //HOMING COMPLETE and SUCCESSFUL
   }
   else if (Homing_Done_F == 3)
   {
-    if (slave.stopAck = 0)
-    {
-      Serial2.println("#STOP");
-      slave.lastCMD_ID = STOP; 
-    }
     ErrorNumber     = MECH_INTEGRITY_FAILED;
     selfTestStatus  = ST_FAIL;
     return;
@@ -667,14 +667,14 @@ void Monitoring()
       break;
   }
 
-  
+  /*
   Serial.print("$");
   Serial.print(FS.Q_SLM, 5);
   Serial.print(" ");
   Serial.print(TV.measured, 5);
   Serial.print(";");
 
-
+*/
 }
 
 /*
@@ -809,8 +809,8 @@ void setup()
 
   /*Stepper Motor Detailed Guide with Driver: https://lastminuteengineers.com/a4988-stepper-motor-driver-arduino-tutorial */
 
-  Timer1.initialize(200);
-  Timer1.attachInterrupt(Timer);
+//  Timer1.initialize(200);
+//  Timer1.attachInterrupt(Timer);
 
 #endif
   pinMode(pin_Button_OK, INPUT);
@@ -943,9 +943,10 @@ void devModeFunc() //Developer Mode
 
 void Ventilator_Control()
 {
-  static boolean initIns = false;
-  static boolean initHld = false;
-  static boolean initExp = false;
+  static boolean initIns = true;
+  static boolean initHld = true;
+  static boolean initExp = true;
+  static boolean initWait = true;
   static unsigned int Tin = 0;
   static unsigned int Tex = 0;
   static unsigned int Th = 0; //ms
@@ -984,6 +985,7 @@ void Ventilator_Control()
   if (activateVentilatorOperation == 1)
   {
     VentilatorOperationON = 1;
+    initWait = true;
 
     if (assistControl == 1) {
       if (patientTriggeredBreath)
@@ -1008,31 +1010,36 @@ void Ventilator_Control()
       Tin = (int)(Tex * expirationRatioSetpoint);
       if (CVmode == VOL_CONT_MODE) {
         reqMotorPos = volumeSetpoint / LINEAR_FACTOR_VOLUME; //mm
-        Vin = reqMotorPos / (Tin / 1000.0f); // mm/s
-        Vex = reqMotorPos / (Tex / 1000.0f); // mm/s
+        Vin = reqMotorPos / ((float)Tin / 1000.0f); // mm/s
+        Vex = reqMotorPos / ((float)Tex / 1000.0f); // mm/s
         RPMin = (Vin / LIN_MECH_mm_per_rev) * 60.0;
         RPMin = (Vex / LIN_MECH_mm_per_rev) * 60.0;
         stepIn = (long)((reqMotorPos / LIN_MECH_mm_per_rev) * STEPPER_MICROSTEP * STEPPER_PULSES_PER_REV);
         stepEx = (long)(stepIn + ((2.0 / LIN_MECH_mm_per_rev) * STEPPER_MICROSTEP * STEPPER_PULSES_PER_REV));
-        periodIn = (long)(((Tin / 1000.0) / stepIn) * 1000000); //us
-        periodEx = (long)(((Tex / 1000.0) / stepIn) * 1000000); //us
+        periodIn = (long)((((float)Tin / 1000.0) / stepIn) * 1000000); //us
+        periodEx = (long)((((float)Tex / 1000.0) / stepIn) * 1000000); //us
     }
     else //PRESS_CONT_MODE 
     {
     }
       BreathStartTimestamp = millis();
 
-#ifdef __DEBUG
+//#ifdef __DEBUG
           static int i = 0;
            Serial.print("In Ventilator Control: "); Serial.println(i++);
-           Serial.print("Breathing Length: "); Serial.println(breathLength);
-           Serial.print("Inspiration Time: "); Serial.println(Tin);
-           Serial.print("Expiration Time: "); Serial.println(Tex);
-           Serial.print("Motor Speed: "); Serial.println(Vin);
-//         Serial.print("Motor Current Pos (Exp): "); Serial.println(stepper.currentPosition());
-           Serial.print("targetPosition: "); Serial.println(reqMotorPosInspiration);
-           Serial.print("Breathing Phase: "); Serial.println(breathPhase);
-#endif
+           Serial.print("Breathing Length:      "); Serial.println(breathLength);
+           Serial.print("Inspiration Time:      "); Serial.print(Tin); Serial.println(" ms");
+           Serial.print("Expiration Time:       "); Serial.println(Tex); Serial.println(" ms");
+           Serial.print("targetPosition:        "); Serial.println(reqMotorPos); Serial.println(" mm");
+           Serial.print("Motor Speed Insp:      "); Serial.println(Vin); Serial.println(" mm/s");
+           Serial.print("Motor Speed Exp:       "); Serial.println(Vex); Serial.println(" mm/s");
+           Serial.print("RPM Insp:              "); Serial.println(RPMin);
+           Serial.print("RPM Exp:               "); Serial.println(RPMex);
+           Serial.print("Steps Insp:            "); Serial.println(stepIn);
+           Serial.print("Steps Exp:             "); Serial.println(stepEx);
+           Serial.print("Period Insp:           "); Serial.println(periodIn); Serial.println(" us");
+           Serial.print("Period Exp:            "); Serial.println(periodEx); Serial.println(" us");
+//#endif
     }
     Tcur = millis() - BreathStartTimestamp;
 
@@ -1049,10 +1056,13 @@ void Ventilator_Control()
 //        if (TV.measured < volumeSetpoint)
         if (slave.runAck == 0) //!setpointAchieved && //CMD NOT RECEIVED
         {
-          Serial2.print("#RUN ");
+/*          Serial2.print("#RUN ");
           Serial2.print(stepIn);Serial2.print(" ");
           Serial2.print(periodIn);Serial2.print(" ");
-          Serial2.println(1); //1 for towards Ambu Bag Dir
+          Serial2.print("1\r"); //1 for towards Ambu Bag Dir
+          */
+         txSlaveCMD(RUN, periodIn, stepIn, "1");
+
           slave.lastCMD_ID = RUN;
         }
         PEEPMesaureFlag = 0;
@@ -1067,9 +1077,11 @@ void Ventilator_Control()
           initExp = true;
         }        
         breathPhase = HOLD_PHASE;
-        if (slave.stopAck == 0) //CMD NOT RECEIVED
-          Serial2.println("#STOP");
-        slave.lastCMD_ID = STOP;
+//        if (slave.stopAck == 0) //CMD NOT RECEIVED
+//          Serial2.print("#STOP\r");
+//            txSlaveCMD(STOP);
+//        Serial.println("STOP: HOLD MANEUVER");
+//        slave.lastCMD_ID = STOP;
       }
       else if ((Tcur > (Tin + Th)) && (Tcur < (Tin + Th + Tex)))
       {
@@ -1084,10 +1096,12 @@ void Ventilator_Control()
 
         if (slave.runAck == 0) //CMD NOT RECEIVED
         {
-          Serial2.print("#RUN ");
+/*          Serial2.print("#RUN ");
           Serial2.print(stepEx);Serial2.print(" ");
           Serial2.print(periodEx);Serial2.print(" ");
-          Serial2.println(0); //0 for away from Ambu Bag Dir
+          Serial2.print("0\r"); //0 for away from Ambu Bag Dir
+*/
+         txSlaveCMD(RUN, periodEx, stepEx, "0");
           slave.lastCMD_ID = RUN;
         }
 
@@ -1105,18 +1119,25 @@ void Ventilator_Control()
   }
   else
   {
-    //      Serial.println("Ventilator Operation Halt");
+      //      Serial.println("Ventilator Operation Halt");
+    if (initWait) {slave.homeAck = 0; initWait = false;}
+    initHld = true;
+    initIns = true;
+    initExp = true;
     VentilatorOperationON = 0;
     breathPhase = WAIT_PHASE;
     Tcur = breathLength; // This will always start inspiration breath cycle on setting switch to start position
     PeepValid = false; //To Prevent False Alarms
     PltPrsValid = false; //To Prevent False Alarms
 
-#ifdef StepGen
-    Serial2.println("#HOME 2000");
-    slave.lastCMD_ID = HOME;
+
+    if (slave.homeAck == 0)
+    {
+//        Serial2.print("#HOME 2000\r");
+        txSlaveCMD(HOME, 2000);
+        slave.lastCMD_ID = HOME;
+    }
     PEEPMesaureFlag = 0;
-#endif
   }
   //    interrupts();
 }
@@ -1206,12 +1227,12 @@ void loop()
     readSensors();
     Monitoring();
 
-    if (slave.strComplete == true)
-    {
-      decodeSlaveTel();
-      slave.AckStr = "";
-      slave.strComplete = false;
-    }
+//    if (slave.strComplete == true)
+//    {
+//      decodeSlaveTel();
+//      slave.AckStr = "";
+//      slave.strComplete = false;
+//    }
     
 
     if (selfTestProg != ST_COMPLETE)
@@ -1251,22 +1272,30 @@ void loop()
   delay response. Multiple bytes of data may be available.
 */
 void serialEvent2() {
-    while (Serial.available()) {
+    while (Serial2.available()) {
       // get the new byte:
-      char inChar = (char)Serial.read();
+      char inChar = (char)Serial2.read();
       // add it to the inputString:
       slave.AckStr += inChar;
       // if the incoming character is a newline, set a flag so the main loop can
       // do something about it:
       if (inChar == '\r') {
+        Serial.println(slave.AckStr);
         slave.strComplete = true;
       }
+    }
+    if (slave.strComplete == true)
+    {
+      decodeSlaveTel();
+      slave.AckStr = "";
+      slave.strComplete = false;
     }
 }
 
 void decodeSlaveTel()
 {
   String message = "";
+
     for (int i = 0; i < slave.AckStr.length(); i++)
     {
       if (slave.AckStr[i] == '#')
@@ -1275,21 +1304,45 @@ void decodeSlaveTel()
         {
           message = slave.AckStr[i+5];
           slave.runAck = message.toInt();
+          Serial.print("runAck = ");Serial.println(slave.runAck);
           break;
         }
         else if ((slave.AckStr[i+1] == 'S') && (slave.AckStr[i+2] == 'T') && (slave.AckStr[i+3] == 'O') && (slave.AckStr[i+4] == 'P'))
         {
           message = slave.AckStr[i+6];
           slave.stopAck = message.toInt();
+          Serial.print("stopAck = ");Serial.println(slave.stopAck);
           break;
         }
         else if ((slave.AckStr[i+1] == 'H') && (slave.AckStr[i+2] == 'O') && (slave.AckStr[i+3] == 'M') && (slave.AckStr[i+4] == 'E'))
         {
           message = slave.AckStr[i+6];
           slave.homeAck = message.toInt();  
-          Homing_Done_F = slave.homeAck;
+//          Homing_Done_F = slave.homeAck;
+          Serial.print("homeAck = ");Serial.println(slave.homeAck);
           break;        
         }
       }
     }
+}
+
+
+void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String dir="0")
+{
+  String cmdString = "";
+  switch (CMD_ID)
+  {
+  case RUN:
+    cmdString = "#RUN " + String(pulses) + " " + String(period) + " " + dir + "\r";
+    break;
+  case HOME:
+    cmdString = "#HOME " + String(period) + "\r";
+    break;
+  case STOP:
+    cmdString = "#STOP\r";
+    break;
+  default:
+    break;
+  }
+  Serial.println(cmdString);
 }
