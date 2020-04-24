@@ -165,6 +165,9 @@ inline static void LCD_Display(int WarmUpFlag, int TotalWarmUpTime_msec, int Sno
         case START_SWT_ERROR:
           sprintf(tempChar2, " VENTILATION ACTIVE ");
           break;
+        case FLOW_SENSOR_DISCONNECTED:
+          sprintf(tempChar2, " Flow Sensor Error  ");
+        break;
         default:
         sprintf(tempChar, "Wait 4 ST/Calib Done");
           break;
@@ -438,16 +441,16 @@ void userInterface(void)
   if (LCDDisplayCtr >= 5) // At 500msec
   {
     LCDDisplayCtr = 0;
-    LCD_Display(WarmUpFlag, WARM_UP_TIME, SnoozeButton, spStatus, DevModeDetectionInProg ,
-                devMode, motorInUse, pressSnsrInUse,
-                CVmode, VentilatorOperationON /* This is SysON (Breath In-Out Loop Running) */,
-                ErrorNumber /* This is ErrorNum (0 means no error)*/,
-                plateauPressure * Pa2cmH2O /* This is measured Plateau Pressure*/,
-                PEEPressure * Pa2cmH2O /* This is measured PEEP*/,
-                selfTestProg /* This is SelfTestInProgl*/,
-                ST_COMPLETE /* This is CalibInProg*/,
-                0 /* This is SpeedSF*/,
-                0 /* This is StepSD*/);
+    // LCD_Display(WarmUpFlag, WARM_UP_TIME, SnoozeButton, spStatus, DevModeDetectionInProg ,
+    //             devMode, motorInUse, pressSnsrInUse,
+    //             CVmode, VentilatorOperationON /* This is SysON (Breath In-Out Loop Running) */,
+    //             ErrorNumber /* This is ErrorNum (0 means no error)*/,
+    //             plateauPressure * Pa2cmH2O /* This is measured Plateau Pressure*/,
+    //             PEEPressure * Pa2cmH2O /* This is measured PEEP*/,
+    //             selfTestProg /* This is SelfTestInProgl*/,
+    //             ST_COMPLETE /* This is CalibInProg*/,
+    //             0 /* This is SpeedSF*/,
+    //             0 /* This is StepSD*/);
 #ifdef DEBUG
 //    Serial.print("Home Pos Hit Position: "); Serial.println(homePosHitMotorPos);
 //    Serial.print("OP2 Hit Position: "); Serial.println(OP2HitMotorPos);

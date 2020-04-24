@@ -20,8 +20,11 @@ void initFlowSensor()
     FS.offsetTemperature = 20000; // Offset for the sensor
     FS.scaleFactorTemperature = 100.0; // Scale factor for Temperature
 
-    measflow.init();
-
+    FS.connectionStatus = measflow.init();
+#ifndef TX_SERIAL_TELEMETRY
+//    Serial.print("Flow Sensor Error Code: "); Serial.println(FS.connectionStatus);
+//    delay(20000); //for testing
+    #endif
     #endif
 }
 
@@ -31,6 +34,7 @@ float getFlowValue()
     unsigned int rawVal = 0.0;
     rawVal = measflow.getvalue();
     volFlowRate = ((float)rawVal - FS.offsetFlow) / (FS.scaleFactorFlow_Air);
+    volFlowRate = (-1.0) * volFlowRate;
     return volFlowRate;
 }
 

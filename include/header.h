@@ -57,7 +57,7 @@
 
 #define FULL_SCALE_VOLUME             800.0f  //ml
 #define FULL_SCALE_LENGTH             35.0f  //mm
-#define LINEAR_FACTOR_VOLUME          22.9f
+#define LINEAR_FACTOR_VOLUME          22.86f
 #define LIN_MECH_mm_per_rev           5.0f
 #define STEPPER_MICROSTEP             2.0f
 #define STEPPER_PULSES_PER_REV        200.0f
@@ -113,6 +113,7 @@
 #define MECH_INTEGRITY_FAILED 19
 #define HOMING_NOT_DONE_ERROR 20
 #define OPS_96_HRS 21
+#define FLOW_SENSOR_DISCONNECTED 22
 
 //******************************   MACROS  ********************************
 
@@ -223,7 +224,7 @@
 #define ee_MVolSF ee_MSpdSF + (sizeof(float));
 #endif
 
-#define samplePeriod1 5 // 5 ms sampling period
+#define samplePeriod1 10 // 5 ms sampling period
 #define samplePeriod2 10 // 10 ms Control Loop
 
 #define highPressureAlarmDetect 10 // delay before an overpressure alarm is triggered (in samplePeriod increments)

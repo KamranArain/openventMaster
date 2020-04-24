@@ -92,7 +92,7 @@ int CVmode = VOL_CONT_MODE;// CV or CP mode indicator;
 int assistControl = 0;
 boolean scanBreathingAttempt = false;
 boolean patientTriggeredBreath = false;
-boolean holdManeuver = true;
+boolean holdManeuver = false;
 boolean setpointAchieved = false;
 int holdDur_ms = 150;
 //int triggerVariable = FLOW_VAR;
@@ -278,6 +278,15 @@ void selfTest()
   selfTestStatus = ST_PASS;
   selfTestProg   = ST_IN_PROG;
 
+  if (FS.connectionStatus != 0)
+  {
+    ErrorNumber = FLOW_SENSOR_DISCONNECTED;
+    #ifndef TX_SERIAL_TELEMETRY
+    Serial.print("Flow Sensor Error Code: "); Serial.println(FS.connectionStatus);  
+    #endif
+    return;
+  }
+
 #ifdef StepGen
 #ifdef AUTO_HOME
 
@@ -313,7 +322,7 @@ Homing_Done_F = slave.homeAck;
   }
 #endif
 #endif
-  if (activateVentilatorOperation == 1)
+/*  if (activateVentilatorOperation == 1)
   {
     //    Serial.println("Self Test FAIL");
 
@@ -327,8 +336,9 @@ Homing_Done_F = slave.homeAck;
     //    Serial.println("Self Test PASS");
     selfTestProg    = ST_COMPLETE;
     return;
-  }
-
+  }*/
+selfTestProg    = ST_COMPLETE;
+return;
 }
 #ifdef MS4525DO
 /*
@@ -568,6 +578,8 @@ void Monitoring()
   static bool initMeasurePEEP = true;
   static float minuteVentilationSum = 0.0;
 
+  static unsigned long T_old_us = millis();
+
   static unsigned long pre_millis_1min = 0;
 
   if ((millis() - pre_millis_1min) >= 60000)
@@ -576,6 +588,7 @@ void Monitoring()
     TV.minuteVentilation = minuteVentilationSum;
   }  
 
+  float delta_t = ((float)(millis() - T_old_us)); //ms
 // Plateau Pressure & PEEP and Set Breathing Flags
   switch (breathPhase)
   {
@@ -586,7 +599,7 @@ void Monitoring()
         peakInspPressure = p_sensor.pressure_gauge_CM * cmH2O_to_Pa;
         initInsp = false;
       }
-      TV.inspiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * samplePeriod1);
+      TV.inspiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
       TV.measured = TV.inspiration;   
 
       minuteVentilationSum += TV.inspiration;
@@ -603,7 +616,7 @@ void Monitoring()
       patientTriggeredBreath = false;
     break;
     case HOLD_PHASE:
-      TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * samplePeriod1);
+      TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
 
       PltPrsValid = true;
       if (initHold)
@@ -627,8 +640,8 @@ void Monitoring()
       break;
     case EXPIRATION_PHASE:
       if (initExp) {TV.expiration = 0.0; initExp = false;}
-      TV.expiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * samplePeriod1);      
-      TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * samplePeriod1);
+      TV.expiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);      
+      TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
 
       if (assistControl == 1) {
         if (scanBreathingAttempt)
@@ -667,15 +680,25 @@ void Monitoring()
       break;
   }
 
-  /*
+  T_old_us = millis();
+
+#ifndef TX_SERIAL_TELEMETRY
   Serial.print("$");
   Serial.print(FS.Q_SLM, 5);
   Serial.print(" ");
   Serial.print(TV.measured, 5);
+//  Serial.print(" ");
+//  Serial.print(p_sensor.pressure_gauge_CM, 5);
+  Serial.print(" ");
+  Serial.print(breathPhase);
+  Serial.print(" ");
+  Serial.print(delta_t, 5);
   Serial.print(";");
+#endif
 
-*/
+
 }
+
 
 /*
      This is the main Alarm Control.
@@ -838,6 +861,10 @@ void setup()
   //lcd.begin(20, 4);
   lcd.backlight(); //setting lcd backlight
 
+  Serial.begin(SERIAL_BAUD);
+  Serial2.begin(SERIAL_BAUD);
+
+
   initFlowSensor();
 
 #ifdef BMP_180
@@ -857,8 +884,6 @@ void setup()
   // reserve 200 bytes for the inputString:
   slave.AckStr.reserve(50);
 
-  Serial.begin(SERIAL_BAUD);
-  Serial2.begin(SERIAL_BAUD);
   //#ifdef TX_SERIAL_TELEMETRY
   //    Serial1.begin(SERIAL_BAUD);
   //#endif
@@ -947,6 +972,7 @@ void Ventilator_Control()
   static boolean initHld = true;
   static boolean initExp = true;
   static boolean initWait = true;
+  static boolean runMotor = true;
   static unsigned int Tin = 0;
   static unsigned int Tex = 0;
   static unsigned int Th = 0; //ms
@@ -978,6 +1004,7 @@ void Ventilator_Control()
     Tex = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
     Tin = (int)(Tex * expirationRatioSetpoint);
     if (holdManeuver) Th = holdDur_ms; else Th = 0;
+    slave.runAck = 0;
     init = false;
     Tcur = breathLength;
   }
@@ -993,7 +1020,7 @@ void Ventilator_Control()
         Tcur = breathLength; //Start a new inhale Cycle 
       }
     }
-
+    
 
     if (Tcur >= breathLength)
     {
@@ -1001,19 +1028,19 @@ void Ventilator_Control()
       bpmSetpoint = reqBPM;                 // Load Fresh User Settings
       volumeSetpoint = reqVolume;
       pressureSetpoint = reqPressure;
-      expirationRatioSetpoint = I_E_SampleSet[(int)reqExpirationRatioIndex - 1];
+      expirationRatioSetpoint = I_E_ExpFactor[(int)reqExpirationRatioIndex - 1];
 
       breathLength = (int)(60000 / bpmSetpoint);
       if (holdManeuver) Th = holdDur_ms; else Th = 0;
       // Take the hold time out of the exhale cycle. Do this to ensure respitory rate is correct.
-      Tex = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
-      Tin = (int)(Tex * expirationRatioSetpoint);
+      Tin = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
+      Tex = (int)(breathLength - Th - Tin);
       if (CVmode == VOL_CONT_MODE) {
         reqMotorPos = volumeSetpoint / LINEAR_FACTOR_VOLUME; //mm
         Vin = reqMotorPos / ((float)Tin / 1000.0f); // mm/s
         Vex = reqMotorPos / ((float)Tex / 1000.0f); // mm/s
         RPMin = (Vin / LIN_MECH_mm_per_rev) * 60.0;
-        RPMin = (Vex / LIN_MECH_mm_per_rev) * 60.0;
+        RPMex = (Vex / LIN_MECH_mm_per_rev) * 60.0;
         stepIn = (long)((reqMotorPos / LIN_MECH_mm_per_rev) * STEPPER_MICROSTEP * STEPPER_PULSES_PER_REV);
         stepEx = (long)(stepIn + ((2.0 / LIN_MECH_mm_per_rev) * STEPPER_MICROSTEP * STEPPER_PULSES_PER_REV));
         periodIn = (long)((((float)Tin / 1000.0) / stepIn) * 1000000); //us
@@ -1024,7 +1051,7 @@ void Ventilator_Control()
     }
       BreathStartTimestamp = millis();
 
-//#ifdef __DEBUG
+#ifdef __DEBUG
           static int i = 0;
            Serial.print("In Ventilator Control: "); Serial.println(i++);
            Serial.print("Breathing Length:      "); Serial.println(breathLength);
@@ -1039,7 +1066,7 @@ void Ventilator_Control()
            Serial.print("Steps Exp:             "); Serial.println(stepEx);
            Serial.print("Period Insp:           "); Serial.println(periodIn); Serial.println(" us");
            Serial.print("Period Exp:            "); Serial.println(periodEx); Serial.println(" us");
-//#endif
+#endif
     }
     Tcur = millis() - BreathStartTimestamp;
 
@@ -1047,14 +1074,16 @@ void Ventilator_Control()
       {
         if (initIns)
         {
-          slave.runAck = 0;
+        //  Serial.println("Inspiration Cycle");
+//          slave.runAck = 0;
+          runMotor = true;
           initHld = true;
           initIns = false;
           initExp = true;
         }        
         breathPhase = INSPIRATION_PHASE;
 //        if (TV.measured < volumeSetpoint)
-        if (slave.runAck == 0) //!setpointAchieved && //CMD NOT RECEIVED
+        if (runMotor && (slave.runAck == 0 || slave.runAck == 2)) //!setpointAchieved && //CMD NOT RECEIVED
         {
 /*          Serial2.print("#RUN ");
           Serial2.print(stepIn);Serial2.print(" ");
@@ -1062,6 +1091,7 @@ void Ventilator_Control()
           Serial2.print("1\r"); //1 for towards Ambu Bag Dir
           */
          txSlaveCMD(RUN, periodIn, stepIn, "1");
+         runMotor = false;
 
           slave.lastCMD_ID = RUN;
         }
@@ -1071,7 +1101,8 @@ void Ventilator_Control()
       {
         if (initHld)
         {
-          slave.stopAck = 0;
+         //   Serial.println("HOLD Cycle");
+//          slave.stopAck = 0;
           initHld = false;
           initIns = true;
           initExp = true;
@@ -1087,14 +1118,17 @@ void Ventilator_Control()
       {
         if (initExp)
         {
-          slave.runAck = 0;
+    //  Serial.println("Exp Cycle");
+
+         // slave.runAck = 0;
+         runMotor = true;
           initHld = true;
           initIns = true;
           initExp = false;
         }                
         breathPhase = EXPIRATION_PHASE;
 
-        if (slave.runAck == 0) //CMD NOT RECEIVED
+        if (runMotor && (slave.runAck == 0 || slave.runAck == 2)) //CMD NOT RECEIVED
         {
 /*          Serial2.print("#RUN ");
           Serial2.print(stepEx);Serial2.print(" ");
@@ -1102,6 +1136,7 @@ void Ventilator_Control()
           Serial2.print("0\r"); //0 for away from Ambu Bag Dir
 */
          txSlaveCMD(RUN, periodEx, stepEx, "0");
+         runMotor = false;
           slave.lastCMD_ID = RUN;
         }
 
@@ -1217,12 +1252,15 @@ void GetTelData()
 
 void loop()
 {
+
+  unsigned long start_Ts = 0;
   WarmUpFlag = 0;
 #ifdef StepGen
 //  digitalWrite(pin_Stepper_SLP, HIGH);
 #endif
   if (millis() > (tick1 + samplePeriod1))
   {
+    start_Ts = micros();
     tick1 = millis();
     readSensors();
     Monitoring();
@@ -1249,13 +1287,21 @@ void loop()
     GetTelData(); //Called at 100Hz
     Prepare_Tx_Telemetry(); //Called at 100Hz
 #endif
+#ifndef TX_SERIAL_TELEMETRY
+Serial.print("Busy Time 1: "); Serial.println(micros()-start_Ts);
+#endif
   }
   if ((selfTestProg == ST_COMPLETE) && (selfTestStatus == ST_PASS)) // I am not writing control loop inside 100Hz loop to keep both loop rates independant
   {
     if (millis() > (tick2 + samplePeriod2))
     {
+      start_Ts = micros();
       tick2 = millis();
       Ventilator_Control(); //Mandatory Volume Controlled Mode Only
+      #ifndef TX_SERIAL_TELEMETRY
+Serial.print("Busy Time 2: "); Serial.println(micros()-start_Ts);
+#endif
+
     }
   }
   if (timer3InterruptTriggered)
@@ -1280,7 +1326,9 @@ void serialEvent2() {
       // if the incoming character is a newline, set a flag so the main loop can
       // do something about it:
       if (inChar == '\r') {
+     #ifndef TX_SERIAL_TELEMETRY
         Serial.println(slave.AckStr);
+     #endif
         slave.strComplete = true;
       }
     }
@@ -1304,14 +1352,14 @@ void decodeSlaveTel()
         {
           message = slave.AckStr[i+5];
           slave.runAck = message.toInt();
-          Serial.print("runAck = ");Serial.println(slave.runAck);
+    //      Serial.print("runAck = ");Serial.println(slave.runAck);
           break;
         }
         else if ((slave.AckStr[i+1] == 'S') && (slave.AckStr[i+2] == 'T') && (slave.AckStr[i+3] == 'O') && (slave.AckStr[i+4] == 'P'))
         {
           message = slave.AckStr[i+6];
           slave.stopAck = message.toInt();
-          Serial.print("stopAck = ");Serial.println(slave.stopAck);
+      //    Serial.print("stopAck = ");Serial.println(slave.stopAck);
           break;
         }
         else if ((slave.AckStr[i+1] == 'H') && (slave.AckStr[i+2] == 'O') && (slave.AckStr[i+3] == 'M') && (slave.AckStr[i+4] == 'E'))
@@ -1319,7 +1367,7 @@ void decodeSlaveTel()
           message = slave.AckStr[i+6];
           slave.homeAck = message.toInt();  
 //          Homing_Done_F = slave.homeAck;
-          Serial.print("homeAck = ");Serial.println(slave.homeAck);
+     //     Serial.print("homeAck = ");Serial.println(slave.homeAck);
           break;        
         }
       }
@@ -1344,5 +1392,8 @@ void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String
   default:
     break;
   }
+  Serial2.print(cmdString);
+#ifndef TX_SERIAL_TELEMETRY
   Serial.println(cmdString);
+#endif
 }

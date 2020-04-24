@@ -18,6 +18,7 @@ float mapFloat(float value, float fromLow, float fromHigh, float toLow, float to
 
 struct Flow_Sensor
 {
+  byte connectionStatus = 127;
   unsigned long offsetFlow = 32768; // Offset for the sensor
   float scaleFactorFlow_Air = 120.0; // Scale factor for Air
   float scaleFactorFlow_O2 = 142.8; // Scale factor for O2 is SFM3000 Only

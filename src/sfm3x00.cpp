@@ -19,11 +19,12 @@ SFM3x00::SFM3x00(int i2cAddress)
 
 
 
-void SFM3x00::init()
+byte SFM3x00::init()
 {
 	int a = 0;
 	int b = 0;
 	int c = 0; 
+	byte connection_status = 255;
 	
  
 //	Wire.begin();
@@ -33,7 +34,7 @@ void SFM3x00::init()
 	Wire.beginTransmission(byte(mI2cAddress)); // transmit to device with I2C mI2cAddress
 	Wire.write(byte(0x10));      //
 	Wire.write(byte(0x00));      //
-	Wire.endTransmission();
+	connection_status = Wire.endTransmission();
 	delay(5);
 	
 	Wire.requestFrom(mI2cAddress, 3); //
@@ -57,6 +58,8 @@ void SFM3x00::init()
 //	Serial.print(b);
 //	Serial.println(c);
 	delay(5);
+
+	return connection_status;
 }
  
 float SFM3x00::getvalue()

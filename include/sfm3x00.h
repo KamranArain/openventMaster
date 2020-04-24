@@ -29,7 +29,7 @@ class SFM3x00 {
   public:
     //SFM3x00(uint8_t i2cAddress);
 	SFM3x00(int i2cAddress);
-    void init();
+    byte init();
     float getvalue();
     
  
