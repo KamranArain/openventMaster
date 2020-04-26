@@ -76,9 +76,10 @@ int breathPhase = WAIT_PHASE;
 int selfTestProg = ST_NOT_INIT; // Selft Test is Implemented
 int selfTestStatus = ST_PASS;   // Selft Test is Implemented
 
-#ifdef AUTO_HOME
+extern byte calibStatus;
+extern byte estimateVolume;
+
 int Homing_Done_F = 0;
-#endif
 
 int ErrorNumber = 0;
 int devMode = 0;
@@ -287,10 +288,9 @@ void selfTest()
     return;
   }
 
-#ifdef StepGen
-#ifdef AUTO_HOME
-
-Homing_Done_F = slave.homeAck;
+if (calibStatus != ST_IN_PROG)
+{
+  Homing_Done_F = slave.homeAck;
 
   if (Homing_Done_F == 0)
   {    
@@ -320,8 +320,14 @@ Homing_Done_F = slave.homeAck;
     selfTestStatus  = ST_FAIL;
     return;
   }
-#endif
-#endif
+}
+  if (calibStatus != ST_COMPLETE)
+  {
+    calibStatus = ST_IN_PROG;
+    calibrate();
+    return;
+  }
+  
 /*  if (activateVentilatorOperation == 1)
   {
     //    Serial.println("Self Test FAIL");
@@ -586,98 +592,110 @@ void Monitoring()
   {
     pre_millis_1min = millis();
     TV.minuteVentilation = minuteVentilationSum;
-  }  
+  }
+
 
   float delta_t = ((float)(millis() - T_old_us)); //ms
-// Plateau Pressure & PEEP and Set Breathing Flags
-  switch (breathPhase)
+
+  if (calibStatus == ST_IN_PROG)
   {
-    case INSPIRATION_PHASE:
-      if (initInsp) {
-        TV.inspiration = 0.0; TV.measured = 0.0;
-        setpointAchieved = false;
-        peakInspPressure = p_sensor.pressure_gauge_CM * cmH2O_to_Pa;
-        initInsp = false;
-      }
-      TV.inspiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
-      TV.measured = TV.inspiration;   
-
-      minuteVentilationSum += TV.inspiration;
-
-      if (peakInspPressure < p_sensor.pressure_gauge_CM)
-        peakInspPressure = p_sensor.pressure_gauge_CM;
-
-
-      // reset init Flags
-      initHold = true;
-      initExp = true;
-      initMeasurePEEP = true;
-      scanBreathingAttempt = false;
-      patientTriggeredBreath = false;
-    break;
-    case HOLD_PHASE:
+    if (estimateVolume)
+    {
       TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
-
-      PltPrsValid = true;
-      if (initHold)
-      {
-        plateauPressure = (p_sensor.pressure_gauge_CM * cmH2O_to_Pa);
-        initHold = false;
-      }
-      else
-      {
-        plateauPressure = (plateauPressure + (p_sensor.pressure_gauge_CM * cmH2O_to_Pa)) * 0.5;
-      }
-    
-      TV.staticCompliance = (TV.inspiration / (plateauPressure - PEEPressure));
-
-      // reset init Flags
-      initInsp = true;
-      initExp = true;
-      initMeasurePEEP = true;
-      scanBreathingAttempt = false;
-      patientTriggeredBreath = false;
-      break;
-    case EXPIRATION_PHASE:
-      if (initExp) {TV.expiration = 0.0; initExp = false;}
-      TV.expiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);      
-      TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
-
-      if (assistControl == 1) {
-        if (scanBreathingAttempt)
-        {
-          if (FS.Q_SLM >= flowTrigger) {
-          patientTriggeredBreath = true; }          
+    }
+  }
+  else
+  {
+  // Plateau Pressure & PEEP and Set Breathing Flags
+    switch (breathPhase)
+    {
+      case INSPIRATION_PHASE:
+        if (initInsp) {
+          TV.inspiration = 0.0; TV.measured = 0.0;
+          setpointAchieved = false;
+          peakInspPressure = p_sensor.pressure_gauge_CM * cmH2O_to_Pa;
+          initInsp = false;
         }
-      }
-      if (PEEPMesaureFlag == 1)
-      {
-        PeepValid = true;
-        if (initMeasurePEEP)
+        TV.inspiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
+        TV.measured = TV.inspiration;   
+
+        minuteVentilationSum += TV.inspiration;
+
+        if (peakInspPressure < p_sensor.pressure_gauge_CM)
+          peakInspPressure = p_sensor.pressure_gauge_CM;
+
+
+        // reset init Flags
+        initHold = true;
+        initExp = true;
+        initMeasurePEEP = true;
+        scanBreathingAttempt = false;
+        patientTriggeredBreath = false;
+      break;
+      case HOLD_PHASE:
+        TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
+
+        PltPrsValid = true;
+        if (initHold)
         {
-          PEEPressure = (p_sensor.pressure_gauge_CM * cmH2O_to_Pa);
-          initMeasurePEEP = false;
+          plateauPressure = (p_sensor.pressure_gauge_CM * cmH2O_to_Pa);
+          initHold = false;
         }
         else
         {
-          PEEPressure = (PEEPressure + (p_sensor.pressure_gauge_CM * cmH2O_to_Pa)) * 0.5;
+          plateauPressure = (plateauPressure + (p_sensor.pressure_gauge_CM * cmH2O_to_Pa)) * 0.5;
         }
-//        TV.staticCompliance = (TV.inspiration / (plateauPressure - PEEPressure));
-      }
+      
+        TV.staticCompliance = (TV.inspiration / (plateauPressure - PEEPressure));
 
-      // reset init Flags
-      initInsp = true;
-      initHold = true;
-      break;
-    default: //WAIT PHASE
-      // reset init Flags
-      initInsp = true;
-      initHold = true;
-      initExp = true;
-      initMeasurePEEP = true;
-      scanBreathingAttempt = false;
-      patientTriggeredBreath = false;
-      break;
+        // reset init Flags
+        initInsp = true;
+        initExp = true;
+        initMeasurePEEP = true;
+        scanBreathingAttempt = false;
+        patientTriggeredBreath = false;
+        break;
+      case EXPIRATION_PHASE:
+        if (initExp) {TV.expiration = 0.0; initExp = false;}
+        TV.expiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);      
+        TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
+
+        if (assistControl == 1) {
+          if (scanBreathingAttempt)
+          {
+            if (FS.Q_SLM >= flowTrigger) {
+            patientTriggeredBreath = true; }          
+          }
+        }
+        if (PEEPMesaureFlag == 1)
+        {
+          PeepValid = true;
+          if (initMeasurePEEP)
+          {
+            PEEPressure = (p_sensor.pressure_gauge_CM * cmH2O_to_Pa);
+            initMeasurePEEP = false;
+          }
+          else
+          {
+            PEEPressure = (PEEPressure + (p_sensor.pressure_gauge_CM * cmH2O_to_Pa)) * 0.5;
+          }
+  //        TV.staticCompliance = (TV.inspiration / (plateauPressure - PEEPressure));
+        }
+
+        // reset init Flags
+        initInsp = true;
+        initHold = true;
+        break;
+      default: //WAIT PHASE
+        // reset init Flags
+        initInsp = true;
+        initHold = true;
+        initExp = true;
+        initMeasurePEEP = true;
+        scanBreathingAttempt = false;
+        patientTriggeredBreath = false;
+        break;
+    }
   }
 
   T_old_us = millis();

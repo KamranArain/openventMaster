@@ -59,11 +59,11 @@
 #define FULL_SCALE_LENGTH             35.0f  //mm
 #define LINEAR_FACTOR_VOLUME          22.86f
 #define LIN_MECH_mm_per_rev           5.0f
-#define STEPPER_MICROSTEP             2.0f
+#define STEPPER_MICROSTEP             4.0f
 #define STEPPER_PULSES_PER_REV        200.0f
 /*******************************   HARDWARE OPTIONS   *******************************
    It's normal for the program to not compile if some of these are undefined as they need an alternative*/
-
+   
 //******************************   IMPIED DEFINITIONS  ********************************
 #ifdef ActiveBeeper
 #define Beeper
@@ -274,6 +274,7 @@ void setMicroSteps(int MicrostepResolution);
 #endif
 
 void selfTest();
+void calibrate();
 void readSensors();
 void Monitoring();
 void alarmControl();
