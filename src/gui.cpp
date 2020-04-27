@@ -435,6 +435,7 @@ void userInterface(void)
   else
     activateVentilatorOperation = 0;
 
+    // activateVentilatorOperation = 0;
   //  if (digitalRead(pin_Switch_MODE == HIGH))     CVmode = PRESS_CONT_MODE; else activateVentilatorOperation = VOL_CONT_MODE;
 
   LCDDisplayCtr++;

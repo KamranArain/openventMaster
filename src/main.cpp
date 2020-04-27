@@ -701,17 +701,17 @@ void Monitoring()
   T_old_us = millis();
 
 #ifndef TX_SERIAL_TELEMETRY
-  Serial.print("$");
-  Serial.print(FS.Q_SLM, 5);
-  Serial.print(" ");
-  Serial.print(TV.measured, 5);
-//  Serial.print(" ");
-//  Serial.print(p_sensor.pressure_gauge_CM, 5);
-  Serial.print(" ");
-  Serial.print(breathPhase);
-  Serial.print(" ");
-  Serial.print(delta_t, 5);
-  Serial.print(";");
+//   Serial.print("$");
+//   Serial.print(FS.Q_SLM, 5);
+//   Serial.print(" ");
+//   Serial.print(TV.measured, 5);
+// //  Serial.print(" ");
+// //  Serial.print(p_sensor.pressure_gauge_CM, 5);
+//   Serial.print(" ");
+//   Serial.print(breathPhase);
+//   Serial.print(" ");
+//   Serial.print(delta_t, 5);
+//   Serial.print(";");
 #endif
 
 
@@ -1306,7 +1306,7 @@ void loop()
     Prepare_Tx_Telemetry(); //Called at 100Hz
 #endif
 #ifndef TX_SERIAL_TELEMETRY
-Serial.print("Busy Time 1: "); Serial.println(micros()-start_Ts);
+//Serial.print("Busy Time 1: "); Serial.println(micros()-start_Ts);
 #endif
   }
   if ((selfTestProg == ST_COMPLETE) && (selfTestStatus == ST_PASS)) // I am not writing control loop inside 100Hz loop to keep both loop rates independant
@@ -1317,7 +1317,7 @@ Serial.print("Busy Time 1: "); Serial.println(micros()-start_Ts);
       tick2 = millis();
       Ventilator_Control(); //Mandatory Volume Controlled Mode Only
       #ifndef TX_SERIAL_TELEMETRY
-Serial.print("Busy Time 2: "); Serial.println(micros()-start_Ts);
+//Serial.print("Busy Time 2: "); Serial.println(micros()-start_Ts);
 #endif
 
     }
