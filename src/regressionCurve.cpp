@@ -8,7 +8,7 @@ extern int Homing_Done_F;
 byte calibStatus = ST_NOT_INIT;
 byte estimateVolume = false;
 
-double VolCoeffs[order+1];
+double VolCoeffs[ORDER+1];
 
 void calibrate(){
 
@@ -80,7 +80,7 @@ void calibrate(){
   
   if (calibStatus == ST_COMPLETE)
   {
-    int ret = fitCurve(order, sizeof(volume)/sizeof(double), steps, volume, sizeof(VolCoeffs)/sizeof(double), VolCoeffs);
+    int ret = fitCurve(ORDER, sizeof(volume)/sizeof(double), steps, volume, sizeof(VolCoeffs)/sizeof(double), VolCoeffs);
 
     //Highest to lowest for 3rd order y=ax^2+bx+c where x is volume and y is step in mm. for 3rd order equation. 
     if (ret == 0){ //Returned value is 0 if no error

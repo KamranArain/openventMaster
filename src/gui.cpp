@@ -426,6 +426,12 @@ void userInterface(void)
       spStatus.curTV = spStatus.newTV;
       spStatus.curOP = spStatus.newOP;
 
+      reqExpirationRatioIndex = spStatus.curI_E_Section;
+      reqBPM = spStatus.curBPM;
+      reqVolume = spStatus.curTV;
+      reqPressure = spStatus.curOP;
+
+      eeput(0);
       spStatusAllowChange = 0;
     }
   }

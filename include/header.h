@@ -237,7 +237,7 @@
 //Calibration Parameters
 #define STEPPERRANGE 40 //mm
 #define stepSize 1 //mm
-#define order 3 //DO not exceed 20.
+#define ORDER 3 //DO not exceed 20.
 
 
 //*******************************   REQUIRED LIBRARIES   *******************************
