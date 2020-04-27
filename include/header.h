@@ -220,14 +220,25 @@
 #define ee_reqBPM eeStart
 #define ee_reqVol ee_reqBPM + (sizeof(float));
 #define ee_reqPres ee_reqVol + (sizeof(float));
-#define ee_MSpdSF ee_reqPres + (sizeof(float));
-#define ee_MVolSF ee_MSpdSF + (sizeof(float));
+#define ee_reqI_E ee_reqPres + (sizeof(float));
+#define ee_reqFiO2 ee_reqI_E + (sizeof(float));
+#define ee_Trigger ee_reqFiO2 + (sizeof(float));
+#define ee_Vol_Coof_a ee_Trigger + (sizeof(float));
+#define ee_Vol_Coof_b ee_MVol_Coof_a + (sizeof(float));
+#define ee_Vol_Coof_c ee_MVol_Coof_b + (sizeof(float));
+#define ee_Vol_Coof_d ee_MVol_Coof_c + (sizeof(float));
 #endif
 
 #define samplePeriod1 10 // 5 ms sampling period
 #define samplePeriod2 10 // 10 ms Control Loop
 
 #define highPressureAlarmDetect 10 // delay before an overpressure alarm is triggered (in samplePeriod increments)
+
+//Calibration Parameters
+#define STEPPERRANGE 40 //mm
+#define stepSize 1 //mm
+#define order 3 //DO not exceed 20.
+
 
 //*******************************   REQUIRED LIBRARIES   *******************************
 #ifdef I2C

@@ -8,16 +8,15 @@ extern int Homing_Done_F;
 byte calibStatus = ST_NOT_INIT;
 byte estimateVolume = false;
 
-#define STEPPERRANGE 40 //mm
-#define stepSize 1 //mm
-
-double steps[(STEPPERRANGE/stepSize)+1]; //mm
-double volume[(STEPPERRANGE/stepSize)+1]; 
+double VolCoeffs[order+1];
 
 void calibrate(){
 
   unsigned int period = 2000; //us
  
+  static double steps[(STEPPERRANGE/stepSize)+1]; //mm
+  static double volume[(STEPPERRANGE/stepSize)+1]; 
+
   static unsigned long reqMotorSteps = 0;
   static int i = stepSize;
   static int j = 1;
@@ -76,23 +75,24 @@ void calibrate(){
     else
     {
       calibStatus = ST_COMPLETE;
-//      Homing_Done_F = 0;
-//      slave.runAck = 0;
-//      slave.homeAck = 0;
     }
   }
   
   if (calibStatus == ST_COMPLETE)
   {
-    int order = 3; //DO not exceed 20.
-    double coeffs[order+1];
-    int ret = fitCurve(order, sizeof(volume)/sizeof(double), steps, volume, sizeof(coeffs)/sizeof(double), coeffs);
+    int ret = fitCurve(order, sizeof(volume)/sizeof(double), steps, volume, sizeof(VolCoeffs)/sizeof(double), VolCoeffs);
 
     //Highest to lowest for 3rd order y=ax^2+bx+c where x is volume and y is step in mm. for 3rd order equation. 
     if (ret == 0){ //Returned value is 0 if no error
+      
+      #ifdef E2PROM
+      int eeAddress = ee_Vol_Coof_a;
+      EEPROM.put(eeAddress, VolCoeffs);
+//      eeAddress += sizeof(VolCoeffs);
+      #endif
     Serial.println("Highest to lowest for 3rd order y=ax^2+bx+c where x is volume and y is step in mm. for 3rd order equation");
-      for (int i = 0; i < sizeof(coeffs)/sizeof(double); i++){
-        Serial.print(coeffs[i], 5);
+      for (int k = 0; k < sizeof(VolCoeffs)/sizeof(double); k++){
+        Serial.print(VolCoeffs[k], 5);
         Serial.print('\t');
       }
     }

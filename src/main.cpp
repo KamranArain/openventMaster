@@ -65,6 +65,7 @@ char  tempChar[20];
 float reqBPM;                // respiratory frequency
 float reqVolume;             // respiratory volume in milliliters
 float reqPressure;           // compression for the ambu-bag in Pa
+float reqFiO2;           // Req Oxygen Concentration
 int reqExpirationRatioIndex; // The proportion of each breathing cycle that is spent breathing in compared to breathing out
 
 float bpmSetpoint;             // respiratory frequency
@@ -120,6 +121,8 @@ int spStatusAllowChange = 0;
 int I_E_InpsFactor[5] = {2, 1, 1, 1, 1};
 int I_E_ExpFactor[5] = {1, 1, 2, 3, 4};
 float I_E_SampleSet[5] = {2.0, 1.0, 0.5, 0.33, 0.25}; // 2:1, 1:1, 1:2, 1:3, 1:4
+
+extern double VolCoeffs[order+1];
 
 extern struct Flow_Sensor FS;
 
@@ -225,17 +228,40 @@ void eeput(int n) // records to EEPROM (only if values are validated)
     eeAddress += sizeof(float);
     EEPROM.put(eeAddress, reqPressure);
     eeAddress += sizeof(float);
+    EEPROM.put(eeAddress, reqExpirationRatioIndex);
+    eeAddress += sizeof(int);
+    EEPROM.put(eeAddress, reqFiO2);
+    eeAddress += sizeof(float);
+    EEPROM.put(eeAddress, flowTrigger);
   }
 #endif
 }
 
 void eeget()
 {
+// #ifdef E2PROM
+//   int eeAddress = eeStart;
+//   EEPROM.get(eeAddress, reqBPM);
+//   eeAddress += sizeof(float);
+//   EEPROM.get(eeAddress, reqVolume);
+//   eeAddress += sizeof(float);
+//   EEPROM.get(eeAddress, reqPressure);
+//   eeAddress += sizeof(float);
+//   EEPROM.get(eeAddress, reqExpirationRatioIndex);
+//   eeAddress += sizeof(int);
+//   EEPROM.get(eeAddress, reqFiO2);
+//   eeAddress += sizeof(float);
+//   EEPROM.get(eeAddress, flowTrigger);
+//   eeAddress += sizeof(float);
+//   EEPROM.get(eeAddress, VolCoeffs);
+//   eeAddress += sizeof(VolCoeffs);
+// #else
   reqBPM = defaultBPM;
   reqVolume = defaultVolume;
   reqPressure = defaultPressure;
   reqExpirationRatioIndex = defaultExpirationRatioIndex;
 //  Serial.print("Read Default Settings\n");  //Arduino gets stuck if comment this line
+// #endif
 }
 
 int homePosHitMotorPos = 0;
