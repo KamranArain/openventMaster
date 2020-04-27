@@ -94,7 +94,7 @@ int CVmode = VOL_CONT_MODE;// CV or CP mode indicator;
 int assistControl = 0;
 boolean scanBreathingAttempt = false;
 boolean patientTriggeredBreath = false;
-boolean holdManeuver = false;
+boolean holdManeuver = true;
 boolean setpointAchieved = false;
 int holdDur_ms = 150;
 //int triggerVariable = FLOW_VAR;
@@ -255,6 +255,17 @@ void eeget()
   eeAddress += sizeof(float);
   EEPROM.get(eeAddress, VolCoeffs);
   eeAddress += sizeof(VolCoeffs);
+  
+  Serial.println("Saved Coefficients:");
+  Serial.println("Highest to lowest for 3rd order y=ax^3+bx^2+cx+d where x is volume and y is step in mm. for 3rd order equation");
+  for (int i = 0; i <= ORDER)
+  {
+        Serial.print(VolCoeffs[i], 5);
+        Serial.print('\t');
+  }
+  Serial.println();
+
+  delay(20000);//for testing only
 #else
   reqBPM = defaultBPM;
   reqVolume = defaultVolume;
@@ -1045,8 +1056,8 @@ void Ventilator_Control()
   {
     breathLength = (int)(60000 / bpmSetpoint);
     // Take the hold time out of the exhale cycle. Do this to ensure respitory rate is correct.
-    Tex = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
-    Tin = (int)(Tex * expirationRatioSetpoint);
+//    Tex = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
+//    Tin = (int)(Tex * expirationRatioSetpoint);
     if (holdManeuver) Th = holdDur_ms; else Th = 0;
     slave.runAck = 0;
     init = false;
@@ -1080,7 +1091,9 @@ void Ventilator_Control()
       Tin = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
       Tex = (int)(breathLength - Th - Tin);
       if (CVmode == VOL_CONT_MODE) {
-        reqMotorPos = volumeSetpoint / LINEAR_FACTOR_VOLUME; //mm
+//        reqMotorPos = volumeSetpoint / LINEAR_FACTOR_VOLUME; //mm
+//        reqMotorPos = (-0.01 * pow(volumeSetpoint, 3) + (0.60 * pow(volumeSetpoint, 2) + (8.16 * volumeSetpoint) + 10.37;
+        reqMotorPos = (VolCoeffs[0] * pow(volumeSetpoint, 3) + (VolCoeffs[1] * pow(volumeSetpoint, 2) + (VolCoeffs[2] * volumeSetpoint) + VolCoeffs[3];
         Vin = reqMotorPos / ((float)Tin / 1000.0f); // mm/s
         Vex = reqMotorPos / ((float)Tex / 1000.0f); // mm/s
         RPMin = (Vin / LIN_MECH_mm_per_rev) * 60.0;

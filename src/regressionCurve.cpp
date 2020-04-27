@@ -31,7 +31,7 @@ void calibrate(){
     volume[0] = 0.0;
     #ifndef TX_SERIAL_TELEMETRY
     Serial.println("Inside Calibration Routine");
-    delay(5000);
+    delay(5000);//for testing only
     #endif
     init = false;    
   }
@@ -86,7 +86,7 @@ void calibrate(){
     if (ret == 0){ //Returned value is 0 if no error
       
       #ifdef E2PROM
-      int eeAddress = ee_Vol_Coof_a;
+      int eeAddress = ee_Vol_Coef_a;
       EEPROM.put(eeAddress, VolCoeffs);
 //      eeAddress += sizeof(VolCoeffs);
       #endif
@@ -95,6 +95,7 @@ void calibrate(){
         Serial.print(VolCoeffs[k], 5);
         Serial.print('\t');
       }
+      delay(20000);//for testing only
     }
   }
 }

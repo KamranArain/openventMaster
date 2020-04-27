@@ -431,7 +431,10 @@ void userInterface(void)
       reqVolume = spStatus.curTV;
       reqPressure = spStatus.curOP;
 
-      eeput(0);
+      #ifdef E2PROM
+        eeput(0);
+      #endif
+      
       spStatusAllowChange = 0;
     }
   }

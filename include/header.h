@@ -114,6 +114,8 @@
 #define HOMING_NOT_DONE_ERROR 20
 #define OPS_96_HRS 21
 #define FLOW_SENSOR_DISCONNECTED 22
+#define PRESSURE_SENSOR_DISCONNECTED 23
+#define O2_SENSOR_DISCONNECTED 24
 
 //******************************   MACROS  ********************************
 
@@ -223,10 +225,10 @@
 #define ee_reqI_E ee_reqPres + (sizeof(float));
 #define ee_reqFiO2 ee_reqI_E + (sizeof(float));
 #define ee_Trigger ee_reqFiO2 + (sizeof(float));
-#define ee_Vol_Coof_a ee_Trigger + (sizeof(float));
-#define ee_Vol_Coof_b ee_MVol_Coof_a + (sizeof(float));
-#define ee_Vol_Coof_c ee_MVol_Coof_b + (sizeof(float));
-#define ee_Vol_Coof_d ee_MVol_Coof_c + (sizeof(float));
+#define ee_Vol_Coef_a ee_Trigger + (sizeof(float));
+#define ee_Vol_Coef_b ee_MVol_Coef_a + (sizeof(float));
+#define ee_Vol_Coef_c ee_MVol_Coef_b + (sizeof(float));
+#define ee_Vol_Coef_d ee_MVol_Coef_c + (sizeof(float));
 #endif
 
 #define samplePeriod1 10 // 5 ms sampling period
