@@ -31,6 +31,7 @@
 #include "header.h"
 #include "gui.h"
 #include "flowSensor.h"
+#include "control.h"
 
 LiquidCrystal_I2C lcd(0x27, 20, 4); // Address of LCD will be finalized from LCD Datasheet
 //Other Address could be 0x20, 0x27 , 0x3F
@@ -130,6 +131,8 @@ struct setpointStatus spStatus;
 struct P_Sensor p_sensor;
 struct TidalVolume TV;
 struct Slave slave;
+
+Control *control;
 
 #ifdef Beeper
 struct Alarm alarm;
@@ -1001,6 +1004,17 @@ void setup()
   pressureSetpoint = reqPressure;
   expirationRatioSetpoint = I_E_SampleSet[reqExpirationRatioIndex - 1];
 
+#ifdef CLOSED_LOOP
+  float deadBand=20; //deadBand to stop adjustment.
+
+  VolCoeffs[0] = 0.00000003;
+  VolCoeffs[1] = -0.00005837;
+  VolCoeffs[2] = 0.07054022;
+  VolCoeffs[3] = 0.65576958;
+
+  control->setConstants(0.1,0.05,0.0,VolCoeffs,deadBand); //values send in this function are needed to be tested.
+#endif
+
   interrupts();
 
   tick1 = millis();
@@ -1046,7 +1060,10 @@ void Ventilator_Control()
   static long periodIn = 0; //us
   static long periodEx = 0; //us
 
+  static float stepsPredicted = 0.0;
+
   static boolean init = true;
+  static boolean skip = true;
 
   //    noInterrupts();
 //  CVmode = VOL_CONT_MODE; //Proto-1
@@ -1091,9 +1108,16 @@ void Ventilator_Control()
       Tin = (int)((breathLength - Th) / (1 + expirationRatioSetpoint)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
       Tex = (int)(breathLength - Th - Tin);
       if (CVmode == VOL_CONT_MODE) {
+
+      #ifdef CLOSED_LOOP
+      //using skip to avoid running volume compensation in first breath cycle.
+      if (!skip) stepsPredicted = control->compensateVolumeError(volumeSetpoint,TV.inspiration);
+      skip = false;
+      #endif
+
 //        reqMotorPos = volumeSetpoint / LINEAR_FACTOR_VOLUME; //mm
         reqMotorPos = (0.00000003 * pow(volumeSetpoint, 3)) + (-0.00005837 * pow(volumeSetpoint, 2)) + (0.07054022 * volumeSetpoint) + 0.65576958;
-        Serial.println(volumeSetpoint);
+        reqMotorPos += stepsPredicted;
         //reqMotorPos = (VolCoeffs[0] * pow(volumeSetpoint, 3)) + (VolCoeffs[1] * pow(volumeSetpoint, 2)) + (VolCoeffs[2] * volumeSetpoint) + VolCoeffs[3];
         Vin = reqMotorPos / ((float)Tin / 1000.0f); // mm/s
         Vex = reqMotorPos / ((float)Tex / 1000.0f); // mm/s
@@ -1217,6 +1241,7 @@ void Ventilator_Control()
     initHld = true;
     initIns = true;
     initExp = true;
+    skip = true;
     VentilatorOperationON = 0;
     breathPhase = WAIT_PHASE;
     Tcur = breathLength; // This will always start inspiration breath cycle on setting switch to start position
