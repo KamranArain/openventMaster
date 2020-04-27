@@ -258,7 +258,7 @@ void eeget()
   
   Serial.println("Saved Coefficients:");
   Serial.println("Highest to lowest for 3rd order y=ax^3+bx^2+cx+d where x is volume and y is step in mm. for 3rd order equation");
-  for (int i = 0; i <= ORDER)
+  for (int i = 0; i <= ORDER; i++)
   {
         Serial.print(VolCoeffs[i], 5);
         Serial.print('\t');
@@ -738,17 +738,17 @@ void Monitoring()
   T_old_us = millis();
 
 #ifndef TX_SERIAL_TELEMETRY
-//   Serial.print("$");
-//   Serial.print(FS.Q_SLM, 5);
-//   Serial.print(" ");
-//   Serial.print(TV.measured, 5);
-// //  Serial.print(" ");
-// //  Serial.print(p_sensor.pressure_gauge_CM, 5);
-//   Serial.print(" ");
-//   Serial.print(breathPhase);
-//   Serial.print(" ");
-//   Serial.print(delta_t, 5);
-//   Serial.print(";");
+  Serial.print("$");
+  Serial.print(FS.Q_SLM, 5);
+  Serial.print(" ");
+  Serial.print(TV.measured, 5);
+  Serial.print(" ");
+  Serial.print(p_sensor.pressure_gauge_CM, 5);
+  Serial.print(" ");
+  Serial.print(breathPhase);
+  Serial.print(" ");
+  Serial.print(delta_t, 5);
+  Serial.print(";");
 #endif
 
 
@@ -1092,8 +1092,9 @@ void Ventilator_Control()
       Tex = (int)(breathLength - Th - Tin);
       if (CVmode == VOL_CONT_MODE) {
 //        reqMotorPos = volumeSetpoint / LINEAR_FACTOR_VOLUME; //mm
-//        reqMotorPos = (-0.01 * pow(volumeSetpoint, 3) + (0.60 * pow(volumeSetpoint, 2) + (8.16 * volumeSetpoint) + 10.37;
-        reqMotorPos = (VolCoeffs[0] * pow(volumeSetpoint, 3) + (VolCoeffs[1] * pow(volumeSetpoint, 2) + (VolCoeffs[2] * volumeSetpoint) + VolCoeffs[3];
+        reqMotorPos = (0.00000003 * pow(volumeSetpoint, 3)) + (-0.00005837 * pow(volumeSetpoint, 2)) + (0.07054022 * volumeSetpoint) + 0.65576958;
+        Serial.println(volumeSetpoint);
+        //reqMotorPos = (VolCoeffs[0] * pow(volumeSetpoint, 3)) + (VolCoeffs[1] * pow(volumeSetpoint, 2)) + (VolCoeffs[2] * volumeSetpoint) + VolCoeffs[3];
         Vin = reqMotorPos / ((float)Tin / 1000.0f); // mm/s
         Vex = reqMotorPos / ((float)Tex / 1000.0f); // mm/s
         RPMin = (Vin / LIN_MECH_mm_per_rev) * 60.0;
@@ -1384,7 +1385,7 @@ void serialEvent2() {
       // do something about it:
       if (inChar == '\r') {
      #ifndef TX_SERIAL_TELEMETRY
-        Serial.println(slave.AckStr);
+      //  Serial.println(slave.AckStr);
      #endif
         slave.strComplete = true;
       }

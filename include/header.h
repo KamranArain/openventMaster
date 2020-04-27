@@ -23,7 +23,7 @@
 #define maxBPM 35.0             // maximum respiratory speed
 #define maxBPMchange 0.2        // maximum respiratory speed change in proportion of final value per beat (1=100%)
 #define minVolume 200.0         // minimum respiratory volume in milliliters
-#define defaultVolume 500.0     // default respiratory volume in milliliters
+#define defaultVolume 960.0     // default respiratory volume in milliliters
 #define stepVolume 100.0        // adjustment step for respiratory volume in milliliters
 #define maxVolume 800.0         // maximum respiratory volume in milliliters
 #define maxVolumeChange 0.25    // maximum respiratory volume change in proportion of final value per beat (1=100%)

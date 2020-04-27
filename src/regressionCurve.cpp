@@ -5,14 +5,14 @@ extern struct Slave slave;
 extern struct TidalVolume TV;
 extern int Homing_Done_F;
 
-byte calibStatus = ST_NOT_INIT;
+byte calibStatus = ST_COMPLETE;//ST_NOT_INIT;//ST_COMPLETE;//
 byte estimateVolume = false;
 
 double VolCoeffs[ORDER+1];
 
 void calibrate(){
 
-  unsigned int period = 2000; //us
+  unsigned int period = 1000; //us
  
   static double steps[(STEPPERRANGE/stepSize)+1]; //mm
   static double volume[(STEPPERRANGE/stepSize)+1]; 
@@ -53,7 +53,7 @@ void calibrate(){
       }
       else if (slave.runAck == CMD_COMPLETE && slave.homeAck == 0)
       {
-        txSlaveCMD(HOME, 2000);
+        txSlaveCMD(HOME, period);
         slave.lastCMD_ID = HOME;
         estimateVolume = false;
         steps[j]= (double)(i);
@@ -80,7 +80,7 @@ void calibrate(){
   
   if (calibStatus == ST_COMPLETE)
   {
-    int ret = fitCurve(ORDER, sizeof(volume)/sizeof(double), steps, volume, sizeof(VolCoeffs)/sizeof(double), VolCoeffs);
+    int ret = fitCurve(ORDER, sizeof(volume)/sizeof(double), volume, steps, sizeof(VolCoeffs)/sizeof(double), VolCoeffs);
 
     //Highest to lowest for 3rd order y=ax^2+bx+c where x is volume and y is step in mm. for 3rd order equation. 
     if (ret == 0){ //Returned value is 0 if no error
@@ -92,7 +92,7 @@ void calibrate(){
       #endif
     Serial.println("Highest to lowest for 3rd order y=ax^2+bx+c where x is volume and y is step in mm. for 3rd order equation");
       for (int k = 0; k < sizeof(VolCoeffs)/sizeof(double); k++){
-        Serial.print(VolCoeffs[k], 5);
+        Serial.print(VolCoeffs[k], 8);
         Serial.print('\t');
       }
       delay(20000);//for testing only
