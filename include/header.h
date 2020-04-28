@@ -36,7 +36,7 @@
 #define maxWeight 150.00        // minimum compression for the ambu-bag in Pa
 #define minPot 0
 #define maxPot 1023
-#define defaultExpirationRatioIndex 3 //Corresponds to 1:2 see definition: I_E_SampleSet
+#define defaultExpirationRatioIndex 1 //Corresponds to 1:2 see definition: IE_R_Value
 
 #define ADC_TO_VOLTS 0.004887585532746823 //0.004887585532746823 is from 5v/1023
 

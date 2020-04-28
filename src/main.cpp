@@ -29,11 +29,10 @@
     EMAIL : <sohaib_ashraf@hotamail.com>
 */
 #include "header.h"
-#include "gui.h"
 #include "flowSensor.h"
 #include "control.h"
+#include "userInterface.h"
 
-LiquidCrystal_I2C lcd(0x27, 20, 4); // Address of LCD will be finalized from LCD Datasheet
 //Other Address could be 0x20, 0x27 , 0x3F
 // Run I2C_Scanner Script to discover device
 
@@ -116,18 +115,15 @@ int pressSnsrInUse = MS4525_IN_USE;
 int motorInUse = STEPPER_IN_USE;
 //#endif
 
-int patientWeight = 50; //kg
+int patientWeight = 70; //kg
 
-int spStatusAllowChange = 0;
-int I_E_InpsFactor[5] = {2, 1, 1, 1, 1};
-int I_E_ExpFactor[5] = {1, 1, 2, 3, 4};
-float I_E_SampleSet[5] = {2.0, 1.0, 0.5, 0.33, 0.25}; // 2:1, 1:1, 1:2, 1:3, 1:4
+extern unsigned int IE_R_Value[3][2];
 
 extern double VolCoeffs[ORDER+1];
 
 extern struct Flow_Sensor FS;
 
-struct setpointStatus spStatus;
+//struct setpointStatus spStatus;
 struct P_Sensor p_sensor;
 struct TidalVolume TV;
 struct Slave slave;
@@ -915,10 +911,9 @@ void setup()
   keypad.setDebounceTime(250);           // Default is 50mS
 #endif
   Wire.begin();
-  lcd.init(); //intializing lcd
-  //lcd.begin(20, 4);
-  lcd.backlight(); //setting lcd backlight
 
+  LCD_setup();
+  
   Serial.begin(SERIAL_BAUD);
   Serial2.begin(SERIAL_BAUD);
 
@@ -968,7 +963,7 @@ void setup()
       if (timer3InterruptTriggered)
       {
         DevModeDetectionInProg = 1;
-        userInterface();
+//        userInterface();
         timer3InterruptTriggered = false;
       }
     }
@@ -982,7 +977,7 @@ void setup()
     }
     if (timer3InterruptTriggered)
     {
-      userInterface();
+//      userInterface();
       timer3InterruptTriggered = false;
     }
   }
@@ -994,15 +989,13 @@ void setup()
   //Fetch Motor Speed and Volume displace SF from EEPROM
   eeget();    // read startup parameters (either from EEPROM or default value)
 //eeput(0);
-  spStatus.curI_E_Section = reqExpirationRatioIndex;
-  spStatus.curBPM = reqBPM;
-  spStatus.curTV = reqVolume;
-  spStatus.curOP = reqPressure;
+
+  InitializeParams();
 
   bpmSetpoint = reqBPM;                 // Start from these values without sweep
   volumeSetpoint = reqVolume;
   pressureSetpoint = reqPressure;
-  expirationRatioSetpoint = I_E_SampleSet[reqExpirationRatioIndex - 1];
+  expirationRatioSetpoint = IE_R_Value[reqExpirationRatioIndex][1]; //Exhale Factor
 
 #ifdef CLOSED_LOOP
   float deadBand=20; //deadBand to stop adjustment.
@@ -1026,11 +1019,11 @@ void devModeFunc() //Developer Mode
   bpmSetpoint = reqBPM; // Start from these values without sweep
   volumeSetpoint = reqVolume;
   pressureSetpoint = reqPressure;
-  expirationRatioSetpoint = I_E_SampleSet[reqExpirationRatioIndex - 1];
+  expirationRatioSetpoint = IE_R_Value[reqExpirationRatioIndex][1]; //Exhale Factor
 
   while (devMode == 1)
   {
-    userInterface();
+//    userInterface();
     delay(1000);
   }
 }
@@ -1100,7 +1093,7 @@ void Ventilator_Control()
       bpmSetpoint = reqBPM;                 // Load Fresh User Settings
       volumeSetpoint = reqVolume;
       pressureSetpoint = reqPressure;
-      expirationRatioSetpoint = I_E_ExpFactor[(int)reqExpirationRatioIndex - 1];
+      expirationRatioSetpoint = IE_R_Value[reqExpirationRatioIndex][1]; //Exhale Factor
 
       breathLength = (int)(60000 / bpmSetpoint);
       if (holdManeuver) Th = holdDur_ms; else Th = 0;
@@ -1294,19 +1287,14 @@ void GetTelData()
     TEL.staticCompliance = TV.staticCompliance;
     TEL.spTrigger = flowTrigger;
 
-  //  TEL.spTV = (int)(reqVolume);
-  //  TEL.spInsPressure = int(reqPressure * Pa2cmH2O);
-    TEL.spTV = (int)(spStatus.newTV);
-    TEL.spInsPressure = int(spStatus.newOP  * Pa2cmH2O);
+    TEL.spTV = (int)(reqVolume);
+    TEL.spInsPressure = int(reqPressure * Pa2cmH2O);
     TEL.spExpPressure = 5 * Pa2cmH2O; //0;
 
     TEL.spFiO2 = 0;
-  //  TEL.spBPM = (int)(reqBPM);
-  //  TEL.spIE_Inhale = I_E_InpsFactor[reqExpirationRatioIndex - 1];
-  //  TEL.spIE_Exhale = I_E_ExpFactor[reqExpirationRatioIndex - 1];
-    TEL.spBPM = (int)(spStatus.newBPM);
-    TEL.spIE_Inhale = I_E_InpsFactor[spStatus.newI_E_Section - 1];
-    TEL.spIE_Exhale = I_E_ExpFactor[spStatus.newI_E_Section - 1];
+    TEL.spBPM = (int)(reqBPM);
+    TEL.spIE_Inhale = IE_R_Value[reqExpirationRatioIndex][0];
+    TEL.spIE_Exhale = IE_R_Value[reqExpirationRatioIndex][1];
     TEL.patientWeight = patientWeight;
 
     TEL.statusByteError = ErrorNumber;
@@ -1323,7 +1311,7 @@ void GetTelData()
       TEL_BYTE |= 0x60;
     else //NOT INIT
       TEL_BYTE &= 0x9F; //Clear D5 and D6
-    if (spStatusAllowChange == 1) TEL_BYTE |= 0x80; //D7 High if Settings Unsaved
+//    if (spStatusAllowChange == 1) TEL_BYTE |= 0x80; //D7 High if Settings Unsaved
 
     TEL.statusByte1 = TEL_BYTE;
     TEL.FDCB = 0xCC;
@@ -1389,7 +1377,15 @@ void loop()
   }
   if (timer3InterruptTriggered)
   {
-    userInterface();
+    readSwitches();
+    Display();
+// #ifdef Beeper
+//   if (SnoozeButton == 1)
+//   {
+//     alarm.action = SNOOZE_ALARM;
+//     ErrorNumber = 0;
+//   }
+// #endif
     timer3InterruptTriggered = false;
   }
 }
