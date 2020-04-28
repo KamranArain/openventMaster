@@ -370,6 +370,7 @@ struct Slave
 #define PRESS_VAR 2
 #define VOL_VAR 3
 
+#define NO_CMD 0
 #define RUN   1
 #define STOP  2
 #define HOME  3
