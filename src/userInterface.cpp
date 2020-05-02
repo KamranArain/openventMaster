@@ -52,7 +52,7 @@ unsigned int Param_New_IE_R   = 1;
 
 
 void LCD_setup() {
-  attachInterrupt(digitalPinToInterrupt(3), KeyPressed, FALLING); 
+  attachInterrupt(digitalPinToInterrupt(2), KeyPressed, FALLING); 
   
   lcd.init();                      
   lcd.backlight();
@@ -459,7 +459,7 @@ void KeyPressed()           //ISR function
 {
   if(key_int_flag == false)
   {
-    byte val = PINA & 0x0F; // get PORTA value
+    byte val = (PINA & 0xF0) >> 4; // get PORTA value
     switch(val)
     {
         case KEY_0: key_value = 0;

@@ -2,38 +2,29 @@
 
 float Control::compensateVolumeError(float setPoint,float measured){
 
-  float error=setPoint-measured;
-  float absError=abs(error);
+  error=setPoint-measured;
+  float absError=fabs(error);
   float valuePredicted=0;
-  float stepsPredicted=0;
 
-  if(absError<=volDeadBand){
+
+      if(absError>volDeadBand){
     discreteIntegral=0;
-    return oldPredicatedSteps;
-  }
-  else{
+     // return oldValuePredicted;
+      }
+      else{
+      discreteIntegral+=error;      
+      }
 
-      discreteIntegral+=error;
-      
-      valuePredicted=kP*absError+kI*discreteIntegral;
-      
-      stepsPredicted=(volEqCoeff[0]*pow(valuePredicted,3))+(volEqCoeff[1]*pow(valuePredicted,2))+(volEqCoeff[2]*valuePredicted)+volEqCoeff[3];
-    
-  }
-  
-  if(error>=0){ // Need to add more steps
+      valuePredicted=kP*error+kI*discreteIntegral; //Weight of Error will reduce with Kp reaching its point + Weight of Error increase by time to reach goal with Ki.
 
-      oldPredicatedSteps=stepsPredicted; 
-      return stepsPredicted;
-  }
-  else{      // Need to sub more steps
-      oldPredicatedSteps = -stepsPredicted;
-      return -stepsPredicted;
-  } 
+      valuePredicted=valuePredicted+oldValuePredicted; //Total Steps added/subtracted From begining of cycle.
 
+      oldValuePredicted=valuePredicted;
+
+      return oldValuePredicted;
 }
 
-void Control::setConstants(float kp,float ki, float kd,float coeff[4],float deadBand){
+void Control::setConstants(float kp,float ki, float kd,double coeff[4],float deadBand){
 
      kP=kp;
      kI=ki;
@@ -41,5 +32,13 @@ void Control::setConstants(float kp,float ki, float kd,float coeff[4],float dead
 
      for(int i=0;i<4;i++)
      volEqCoeff[i]=coeff[i];
-     volDeadBand=deadBand;    
+     volDeadBand=deadBand;
+
+      oldValuePredicted=0;
+      oldPredicatedSteps=0;
+}
+
+void Control::resetController(){
+      discreteIntegral=0;
+
 }

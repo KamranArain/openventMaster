@@ -5,7 +5,7 @@
 
 #define CODE_VER_MAJOR 2
 #define CODE_VER_MINOR 7 //(Took hold time out of expiration, Homing Done moved to interrupt, Plateau Pressure and PEEP measurements moved to readsensors function)
-
+#define QT_PLOTTER
 //************************   DEVICE OPERATIONAL PARAMETERS   ************************/
 /*
        WARNING : When changing min and max value, manually change the text in the SerialCommand procedure accordingly
@@ -23,7 +23,7 @@
 #define maxBPM 35.0             // maximum respiratory speed
 #define maxBPMchange 0.2        // maximum respiratory speed change in proportion of final value per beat (1=100%)
 #define minVolume 200.0         // minimum respiratory volume in milliliters
-#define defaultVolume 960.0     // default respiratory volume in milliliters
+#define defaultVolume 600.0     // default respiratory volume in milliliters
 #define stepVolume 100.0        // adjustment step for respiratory volume in milliliters
 #define maxVolume 800.0         // maximum respiratory volume in milliliters
 #define maxVolumeChange 0.25    // maximum respiratory volume change in proportion of final value per beat (1=100%)
@@ -129,13 +129,14 @@
 #define ST_COMPLETE 2
 #define ST_FAIL 0
 #define ST_PASS 1
-#define WARM_UP_TIME 10 * 1000
+#define WARM_UP_TIME 2 * 1000
 
 #define DC_MOTOR_IN_USE 1
 #define STEPPER_IN_USE 0
 
 #define VOL_CONT_MODE 0
 #define PRESS_CONT_MODE 1
+#define CALIB_PARAM PRESS_CONT_MODE
 
 /**********Pressure sensors parameters*************/
 #define BMP180_IN_USE 1
@@ -240,6 +241,7 @@
 #define STEPPERRANGE 40 //mm
 #define stepSize 1 //mm
 #define ORDER 3 //DO not exceed 20.
+#define ORDER_PRESS_EQ 3 //DO not exceed 20.
 
 
 //*******************************   REQUIRED LIBRARIES   *******************************
@@ -287,7 +289,7 @@ void setMicroSteps(int MicrostepResolution);
 #endif
 
 void selfTest();
-void calibrate();
+void calibrate(int calibParam);
 void readSensors();
 void Monitoring();
 void alarmControl();

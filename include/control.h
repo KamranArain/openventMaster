@@ -7,20 +7,24 @@ class Control{
   public:
   
   float compensateVolumeError(float setPoint,float measured);
-  void setConstants(float kp,float ki, float kd,float coeff[4],float deadBand); 
+  void setConstants(float kp,float ki, float kd,double coeff[4],float deadBand);
+  void resetController();
   
     
-  private:
+  public:
 
   float kP;
   float kI;
   float kD;
 
   float volDeadBand; //ml
-  float volEqCoeff[4];
+  double volEqCoeff[4];
   float discreteIntegral;
   float oldError;
-  float oldPredicatedSteps=0;
+  float oldPredicatedSteps;
+  float oldValuePredicted;
+  float stableIntegral;
+  float error;
 };
 
 
