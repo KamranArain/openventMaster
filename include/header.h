@@ -17,6 +17,10 @@
        some changes have been made to havee a lower default volume in case the machine is used
        with an infant to prevent damaging their lungs with an adult setting.*/
 
+#define Pa2cmH2O 0.0101972
+#define cmH2O_to_Pa 98.0665
+
+
 #define minBPM 8.0             // minimum respiratory speed
 #define defaultBPM 12.0         // default respiratory speed
 #define stepBPM 1.0             // adjustment step for respiratory speed
@@ -28,9 +32,9 @@
 #define maxVolume 800.0         // maximum respiratory volume in milliliters
 #define maxVolumeChange 0.25    // maximum respiratory volume change in proportion of final value per beat (1=100%)
 #define minPressure 0.00        // minimum compression for the ambu-bag in Pa
-#define stepPressure 500.00     // adjustment step for compression for the ambu-bag in Pa
-#define defaultPressure 2942.00 // default compression for the ambu-bag in Pa
-#define maxPressure 3922.66     // maximum compression for the ambu-bag in Pa //approx 40cH20
+#define stepPressure 5.0     // adjustment step for compression for the ambu-bag in Pa
+#define defaultPressure 30.0 // default compression for the ambu-bag in Pa
+#define maxPressure 40.0     // maximum compression for the ambu-bag in Pa //approx 40cH20
 #define maxPressureChange 0.5   // maximum compression for the ambu-bag change in proportion of final value per beat (1=100%)
 #define minWeight 2.00          // minimum compression for the ambu-bag in Pa
 #define maxWeight 150.00        // minimum compression for the ambu-bag in Pa
@@ -136,7 +140,6 @@
 
 #define VOL_CONT_MODE 0
 #define PRESS_CONT_MODE 1
-#define CALIB_PARAM PRESS_CONT_MODE
 
 /**********Pressure sensors parameters*************/
 #define BMP180_IN_USE 1
@@ -153,8 +156,6 @@
 #define PSI_to_Pa 6894.757f
 /***************end***********************/
 
-#define Pa2cmH2O 0.0101972
-#define cmH2O_to_Pa 98.0665
 
 //********************************   CONNECTION PINS   ********************************
 // ATmega2560-Arduino Pin Mapping: https://www.arduino.cc/en/Hacking/PinMapping2560
@@ -255,7 +256,7 @@
 #include "TimerThree.h" // Timer3 component
 
 //***************************************   FUNCTION PROTOTYPES   ***************************************
-void Timer1Interrupt();
+void Timer1ISR();
 
 void selfTest();
 void calibrate(int calibParam);
@@ -294,14 +295,18 @@ struct P_Sensor
 
 struct setpointStatus
 {
-  int curI_E_Section; //Patient Weight
-  int curBPM;         // BPM
-  int curTV;          //Tidal Volume Setpoint
-  int curIP;          //Overpressure limit
-  int newI_E_Section; //Patient Weight
-  int newBPM;         // BPM
-  int newTV;          //Tidal Volume Setpoint
-  int newOP;          //Overpressure limit
+  uint8_t curI_E; //I/E Ratio
+  uint8_t curBPM;         // BPM
+  uint16_t curVolume;          //Tidal Volume Setpoint
+  uint8_t curPressure;          //Insp pressure limit
+  uint8_t curFiO2;          //Oxygen Concentration
+  
+  uint8_t reqI_E_Section; //I/E Ratio
+  uint8_t reqBPM;         // BPM
+  uint16_t reqVolume;          //Tidal Volume Setpoint
+  uint8_t reqPressure;          //Insp pressure limit
+  uint8_t reqFiO2;          //Oxygen Concentration
+  float flowTriggerSenstivity; //Lpm trigger for Assist mode
 };
 
 struct Alarm

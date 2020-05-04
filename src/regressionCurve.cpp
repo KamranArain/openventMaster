@@ -7,7 +7,7 @@ extern struct Slave slave;
 extern struct TidalVolume TV;
 extern struct P_Sensor p_sensor;
 
-byte calibStatus = ST_COMPLETE;//ST_NOT_INIT;//ST_COMPLETE;//
+byte calibStatus = ST_NOT_INIT;//ST_NOT_INIT;//ST_COMPLETE;//
 byte estimateVolume = false;
 
 double VolCoeffs[ORDER+1];
@@ -16,7 +16,7 @@ double PressCoeffs[ORDER_PRESS_EQ+1];
 
 void calibrate(int calibParam){
 
-  unsigned int period = 1000; //us
+  unsigned int period = 2000; //us
  
   static double steps[(STEPPERRANGE/stepSize)+1]; //mm
   static double volume[(STEPPERRANGE/stepSize)+1]; 

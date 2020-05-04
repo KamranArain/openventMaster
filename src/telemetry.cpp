@@ -171,7 +171,7 @@ void Prepare_Tx_Telemetry()
     {
         milli_old = millis();
         TEL.txUpdateRate = ctr;
-        Serial.print(F("Tel Tx Rate: ")); Serial.print(TEL.txUpdateRate); Serial.println(F(" Hz"));
+        //Serial.print(F("Tel Tx Rate: ")); Serial.print(TEL.txUpdateRate); Serial.println(F(" Hz"));
         ctr = 0;
     }
 }

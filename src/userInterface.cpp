@@ -3,15 +3,11 @@
 
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
-extern uint8_t reqBPM;
-extern uint16_t reqVolume;
-extern uint8_t reqPressure;
-extern uint8_t reqFiO2;
-extern uint8_t reqExpirationRatioIndex;
 extern uint8_t CVmode;
 extern uint8_t assistControl;
-extern float flowTrigger; //lpm
 extern uint8_t activateVentilatorOperation;
+extern struct setpointStatus setpoint;
+
 
 void Display_menu_1(void);
 void Display_menu_2(void);
@@ -76,12 +72,12 @@ void LCD_setup() {
 }
 
 void InitializeParams() {
-  Param_FiO2     = (int)(reqFiO2);     // FiO2
-  Param_TV       = (int)(reqVolume);    // Tidal Volume
-  Param_RR       = (int)(reqBPM);     // Respiratory Rate
-  Param_PC       = (int)(reqPressure);     // Pressure Control
-  Param_TRIG     = flowTrigger;             // Triggering
-  Param_IE_R     = reqExpirationRatioIndex;      // I:E Ratio
+  Param_FiO2     = setpoint.reqFiO2;     // FiO2
+  Param_TV       = setpoint.reqVolume;    // Tidal Volume
+  Param_RR       = setpoint.reqBPM;     // Respiratory Rate
+  Param_PC       = setpoint.reqPressure;     // Pressure Control
+  Param_TRIG     = setpoint.flowTriggerSenstivity;             // Triggering
+  Param_IE_R     = setpoint.reqI_E_Section;      // I:E Ratio
 
   if (CVmode == VOL_CONT_MODE) {
     if (assistControl == 1) Param_vMode = VENT_MODE_AC_VCV;
@@ -172,7 +168,7 @@ void Input_Validation(void) ///
           if( new_value >=50 && new_value <= 100)
           {
             Param_FiO2 = new_value;
-            reqFiO2 = (float)(Param_FiO2);
+            setpoint.reqFiO2 = (float)(Param_FiO2);
             new_value = 0;
           }
           else
@@ -184,7 +180,7 @@ void Input_Validation(void) ///
           if( new_value >= 200 && new_value <=800)
           {
             Param_TV = new_value;
-            reqVolume = (float)(Param_TV);
+            setpoint.reqVolume = (float)(Param_TV);
             new_value = 0;
           }
           else
@@ -196,7 +192,7 @@ void Input_Validation(void) ///
           if( new_value >= 8 && new_value <=35)
           {
             Param_RR = new_value;
-            reqBPM = (float)(Param_RR);
+            setpoint.reqBPM = (float)(Param_RR);
             new_value = 0;
           }
           else
@@ -208,7 +204,7 @@ void Input_Validation(void) ///
           if( new_value >= 0 && new_value <=40)
           {
             Param_PC = new_value;
-            reqPressure = (float)(Param_PC);
+            setpoint.reqPressure = (float)(Param_PC);
             new_value = 0;
           }
           else
@@ -218,11 +214,11 @@ void Input_Validation(void) ///
           break;
         case DISPLAY_TRIG:
           Param_TRIG = Param_New_TRIG;
-          flowTrigger = Param_TRIG;
+          setpoint.flowTriggerSenstivity = Param_TRIG;
           break;
         case DISPLAY_I_E:
           Param_IE_R = Param_New_IE_R;
-          reqExpirationRatioIndex = Param_IE_R;
+          setpoint.reqI_E_Section = Param_IE_R;
           break;
         case DISPLAY_VMODE:
           Param_vMode = Param_New_vMode;
