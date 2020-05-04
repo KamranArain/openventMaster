@@ -3,15 +3,15 @@
 
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
-extern float reqBPM;
-extern float reqVolume;
-extern float reqPressure;
-extern float reqFiO2;
-extern int reqExpirationRatioIndex;
-extern int CVmode;
-extern int assistControl;
+extern uint8_t reqBPM;
+extern uint16_t reqVolume;
+extern uint8_t reqPressure;
+extern uint8_t reqFiO2;
+extern uint8_t reqExpirationRatioIndex;
+extern uint8_t CVmode;
+extern uint8_t assistControl;
 extern float flowTrigger; //lpm
-extern int activateVentilatorOperation;
+extern uint8_t activateVentilatorOperation;
 
 void Display_menu_1(void);
 void Display_menu_2(void);
@@ -34,9 +34,9 @@ unsigned int new_value = 0;
 #define VENT_MODE_AC_VCV    2
 #define VENT_MODE_AC_PCV    3
 
-unsigned int IE_R_Value[3][2] = { {1,1},{1,2},{1,3}};
+uint8_t IE_R_Value[3][2] = { {1,1},{1,2},{1,3}};
 char VentMode[4][7]= {  "VCV   ",  "PCV   ",  "AC-VCV",  "AC-PCV" };
-
+/*
 unsigned int Param_FiO2     = 75;     // FiO2
 unsigned int Param_TV       = 200;    // Tidal Volume
 unsigned int Param_RR       = 20;     // Respiratory Rate
@@ -48,6 +48,19 @@ unsigned int Param_vMode    = VENT_MODE_VCV;
 unsigned int Param_New_vMode  = 0;
 float        Param_New_TRIG   = 0;
 unsigned int Param_New_IE_R   = 1;
+*/
+
+uint8_t Param_FiO2     = 75;     // FiO2
+uint16_t Param_TV       = 200;    // Tidal Volume
+uint8_t Param_RR       = 20;     // Respiratory Rate
+uint8_t Param_PC       = 20;     // Pressure Control
+uint8_t Param_IE_R     = 1;      // I:E Ratio
+float        Param_TRIG     = 0.5;             // Triggering
+uint8_t Param_vMode    = VENT_MODE_VCV;
+
+uint8_t Param_New_vMode  = 0;
+float        Param_New_TRIG   = 0;
+uint8_t Param_New_IE_R   = 1;
 
 
 
@@ -83,7 +96,7 @@ void InitializeParams() {
 
 void Display_menu_1(void)
 {
-    char displayStr[20]={};
+    char displayStr[21]={};
     lcd.clear();
     
     // Display FiO2
@@ -112,7 +125,7 @@ void Display_menu_1(void)
 
 void Display_menu_2(void)
 {
-    char displayStr[20]={};
+    char displayStr[21]={};
     lcd.clear();
 
     // Display I:E Ratio
@@ -255,7 +268,7 @@ void Display(void)
 {
   if(key_int_flag)
   {
-      char displayStr[20]={};
+      char displayStr[21]={};
       key_int_flag = false;
       switch(display_screen_state)
       {
@@ -447,11 +460,11 @@ void Display(void)
            break;
       }
     // testing
-    Serial.print(new_value);
-    Serial.print("  ");
-    Serial.print(display_screen_state);
-    Serial.print("  ");
-    Serial.println(key_value);
+    // Serial.print(new_value);
+    // Serial.print("  ");
+    // Serial.print(display_screen_state);
+    // Serial.print("  ");
+    // Serial.println(key_value);
   }
 }
 

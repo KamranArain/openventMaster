@@ -5,7 +5,7 @@
 
 #define CODE_VER_MAJOR 2
 #define CODE_VER_MINOR 7 //(Took hold time out of expiration, Homing Done moved to interrupt, Plateau Pressure and PEEP measurements moved to readsensors function)
-#define QT_PLOTTER
+//#define QT_PLOTTER
 //************************   DEVICE OPERATIONAL PARAMETERS   ************************/
 /*
        WARNING : When changing min and max value, manually change the text in the SerialCommand procedure accordingly
@@ -163,7 +163,7 @@
 #define pin_SCL 21
 #endif
 
-#define MPX_IN A4
+//#define MPX_IN A4
 
 #ifdef ActiveBeeper
 #define pin_Beep 37 //Any Pin
@@ -192,15 +192,6 @@
 #define pin_LmtSWT_CL2 49
 
 #ifdef stepDirMotor
-//#define pin_Stepper_DIR 4
-//#define pin_Stepper_STEP 3
-//#define pin_Stepper_SLP 2 //Active Low
-//#define pin_Stepper_RST      15 //Active Low
-//#define pin_Stepper_MS3 25
-//#define pin_Stepper_MS2 24
-//#define pin_Stepper_MS1 23
-//#define pin_Stepper_EN1     23 //Active Low
-//#define pin_Stepper_EN2     24 //Active Low
 
 //Instructions for using moveTo function of Accel Stepper Class
 // moveTo() also recalculates the speed for the next step.
@@ -248,12 +239,6 @@
 #ifdef I2C
 #include <Wire.h>              // I2C Library 2 wire Protocol
 #include <LiquidCrystal_I2C.h> // Library for LCD //Liquid Crystal I2C by Frank de Brabander
-
-#ifdef BMP_180
-#include <SFE_BMP180.h> // BMP180 library to read bmp180
-#define ALTITUDE 1655.0 //this should be according to the altitude of the user
-SFE_BMP180 bmp180;
-#endif
 #endif
 
 #ifdef E2PROM
@@ -269,24 +254,8 @@ SFE_BMP180 bmp180;
 
 #include "TimerThree.h" // Timer3 component
 
-#ifdef PID_CONTROL
-
-//----------------------------------------------------------------------
-//PID stuff for stepper motors
-//----------------------------------------------------------------------
-#include <PID_v1.h>
-
-#define max_stepCmd 20000.0  //max output value from PID
-#define min_stepCmd -20000.0  //min output value from PID
-#define PID_sample_time 10  //how often the PID algorithm evaluates in ms
-#define deadband 3        // +/- number of counts to not respond 6
-
-#endif
 //***************************************   FUNCTION PROTOTYPES   ***************************************
-#ifdef StepGen
-void Timer();
-void setMicroSteps(int MicrostepResolution);
-#endif
+void Timer1Interrupt();
 
 void selfTest();
 void calibrate(int calibParam);
@@ -308,11 +277,6 @@ void GetTelData();
 void eeput(int n); // records to EEPROM (only if values are validated)
 void eeget();
 
-#ifdef PID_CONTROL
-void PID_setup();
-void calc_PID();
-#endif
-
 void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String dir="0");
 void decodeSlaveTel();
 //***************************************   END   ***************************************
@@ -333,7 +297,7 @@ struct setpointStatus
   int curI_E_Section; //Patient Weight
   int curBPM;         // BPM
   int curTV;          //Tidal Volume Setpoint
-  int curOP;          //Overpressure limit
+  int curIP;          //Overpressure limit
   int newI_E_Section; //Patient Weight
   int newBPM;         // BPM
   int newTV;          //Tidal Volume Setpoint
@@ -382,18 +346,6 @@ struct Slave
 #define CMD_COMPLETE 2
 #define CMD_ERROR    3
 
-#ifdef PID_CONTROL
-
-struct PID_TYPE
-{
-  double setpoint = 500.0;
-  double output = 0.0;
-  double input = 0.0;
-  double Kp = 0.03;  //proportional gain
-  double Ki = 0.0;
-  double Kd = 0.0;
-};
-#endif
 //***************************************   END   ***************************************
 #endif
 /* NOTE*****************************************************************************************************************8
