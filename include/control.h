@@ -8,7 +8,7 @@ class Control{
   
   float compensateError(float setPoint,float measured);
   void  setConstants(float kp,float ki,float bandIntegral,float eLimit); 
-  void resetController();
+  void resetController(float sP);
   
   float valuePredicted;
   float error;  
@@ -20,6 +20,7 @@ class Control{
   float integralStartBand;
   float discreteIntegral;
   float errorLimit;
+  float selectedSetPoint;
 
 
 };

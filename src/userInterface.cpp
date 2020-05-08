@@ -162,6 +162,7 @@ void get_value(void)
 
 void Input_Validation(void) ///
 {
+  boolean updateEEPROM = false;
     switch(display_screen_Next_state)
     {
       case DISPLAY_FIO2:
@@ -169,6 +170,7 @@ void Input_Validation(void) ///
           {
             Param_FiO2 = new_value;
             setpoint.reqFiO2 = (float)(Param_FiO2);
+            updateEEPROM = true;
             new_value = 0;
           }
           else
@@ -181,6 +183,7 @@ void Input_Validation(void) ///
           {
             Param_TV = new_value;
             setpoint.reqVolume = (float)(Param_TV);
+            updateEEPROM = true;
             new_value = 0;
           }
           else
@@ -193,6 +196,7 @@ void Input_Validation(void) ///
           {
             Param_RR = new_value;
             setpoint.reqBPM = (float)(Param_RR);
+            updateEEPROM = true;
             new_value = 0;
           }
           else
@@ -205,6 +209,7 @@ void Input_Validation(void) ///
           {
             Param_PC = new_value;
             setpoint.reqPressure = (float)(Param_PC);
+            updateEEPROM = true;
             new_value = 0;
           }
           else
@@ -215,10 +220,12 @@ void Input_Validation(void) ///
         case DISPLAY_TRIG:
           Param_TRIG = Param_New_TRIG;
           setpoint.flowTriggerSenstivity = Param_TRIG;
+            updateEEPROM = true;
           break;
         case DISPLAY_I_E:
           Param_IE_R = Param_New_IE_R;
           setpoint.reqI_E_Section = Param_IE_R;
+            updateEEPROM = true;
           break;
         case DISPLAY_VMODE:
           Param_vMode = Param_New_vMode;
@@ -241,11 +248,15 @@ void Input_Validation(void) ///
           default:
             break;
           }
+            updateEEPROM = true;
           break;
         default:
           new_value = 0;
           break;
     }
+    #ifdef E2PROM
+    if (updateEEPROM) eeput();
+    #endif
 }
 
 // clear input value

@@ -21,33 +21,21 @@
 #define cmH2O_to_Pa 98.0665
 
 
-#define minBPM 8.0             // minimum respiratory speed
-#define defaultBPM 12.0         // default respiratory speed
-#define stepBPM 1.0             // adjustment step for respiratory speed
-#define maxBPM 35.0             // maximum respiratory speed
-#define maxBPMchange 0.2        // maximum respiratory speed change in proportion of final value per beat (1=100%)
-#define minVolume 200.0         // minimum respiratory volume in milliliters
-#define defaultVolume 600.0     // default respiratory volume in milliliters
-#define stepVolume 100.0        // adjustment step for respiratory volume in milliliters
-#define maxVolume 800.0         // maximum respiratory volume in milliliters
-#define maxVolumeChange 0.25    // maximum respiratory volume change in proportion of final value per beat (1=100%)
-#define minPressure 0.00        // minimum compression for the ambu-bag in Pa
-#define stepPressure 5.0     // adjustment step for compression for the ambu-bag in Pa
-#define defaultPressure 30.0 // default compression for the ambu-bag in Pa
-#define maxPressure 40.0     // maximum compression for the ambu-bag in Pa //approx 40cH20
-#define maxPressureChange 0.5   // maximum compression for the ambu-bag change in proportion of final value per beat (1=100%)
-#define minWeight 2.00          // minimum compression for the ambu-bag in Pa
-#define maxWeight 150.00        // minimum compression for the ambu-bag in Pa
-#define minPot 0
-#define maxPot 1023
+#define minBPM 8             // minimum respiratory speed
+#define defaultBPM 12        // default respiratory speed
+#define maxBPM 35             // maximum respiratory speed
+#define minVolume 200         // minimum respiratory volume in milliliters
+#define defaultVolume 600     // default respiratory volume in milliliters
+#define maxVolume 800         // maximum respiratory volume in milliliters
+#define minPressure 0        // minimum compression for the ambu-bag in cmH2O
+#define defaultPressure 15 // default compression for the ambu-bag in cmH2O
+#define maxPressure 40     // maximum compression for the ambu-bag in cmH2O //approx 40cH20
+#define minWeight 2          // minimum compression for the ambu-bag in Pa
+#define maxWeight 150        // minimum compression for the ambu-bag in Pa
 #define defaultExpirationRatioIndex 1 //Corresponds to 1:2 see definition: IE_R_Value
 
 #define ADC_TO_VOLTS 0.004887585532746823 //0.004887585532746823 is from 5v/1023
 
-#define ambientPressureFilter 0.002       // IIR filtering ratio (lower value produce longer time constant)
-#define avgPressureFilter 0.1             // IIR filtering ratio (lower value produce longer time constant)
-#define defaultMeasuredPressure 105000.00 // Pressure in Pa returned when no sensor is found
-#define defaultAmbientPressure 105000.00  // assumed ambiant pressure in Pa returned when no sensor is found
 /*******************************   MOTOR PARAMETERS FOR STEPPER MOTOR   *******************************
 
        These values will be highly dependant on mechanical design.
@@ -275,7 +263,7 @@ void GetTelData();
 #endif
 //#ifdef E2PROM
 //#endif
-void eeput(int n); // records to EEPROM (only if values are validated)
+void eeput(); // records to EEPROM (only if values are validated)
 void eeget();
 
 void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String dir="0");

@@ -23,13 +23,13 @@ float mRR;
 float mPeakPressure;
 
 uint16_t spTV;
-uint8_t spInsPressure;
-uint8_t spExpPressure;
+int16_t spInsPressure;
+int16_t spExpPressure;
 uint8_t spFiO2;
 uint8_t spBPM;
 uint8_t spIE_Inhale;
 uint8_t spIE_Exhale;
-uint8_t spPEEP;
+int16_t spPEEP;
 uint8_t patientWeight;
 float spTrigger;
 

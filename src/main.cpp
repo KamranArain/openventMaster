@@ -78,7 +78,6 @@ uint8_t assistControl = 0;
 boolean scanBreathingAttempt = false;
 boolean patientTriggeredBreath = false;
 boolean holdManeuver = true;
-boolean setpointAchieved = false;
 uint16_t holdDur_ms = 150;
 //int triggerVariable = FLOW_VAR;
 //int cyclingVariable = TIME_VAR;
@@ -118,15 +117,31 @@ void (*resetFunction)(void) = 0; // Self reset (to be used with watchdog)
 
 boolean checkValues()
 {
-  boolean isOk = (setpoint.reqBPM >= minBPM);                  // BPM in allowed range ?
+  boolean isOk = true;
+  if (setpoint.reqBPM < minBPM)  isOk = false;                  // BPM in allowed range ?
   if (setpoint.reqBPM > maxBPM) isOk = false;
   if (setpoint.reqVolume < minVolume) isOk = false;            // Volume in allowed range ?
   if (setpoint.reqVolume > maxVolume) isOk = false;
   if (setpoint.reqPressure < minPressure) isOk = false;  // Compression in allowed range ?
   if (setpoint.reqPressure > maxPressure) isOk = false;
+  if (setpoint.reqFiO2 < 50) isOk = false;  // 
+  if (setpoint.reqFiO2 > 100) isOk = false;
+  if (setpoint.reqI_E_Section < 0) isOk = false;  // 
+  if (setpoint.reqI_E_Section > 2) isOk = false;
+  if (setpoint.flowTriggerSenstivity < (-0.5f)) isOk = false;  // 
+  if (setpoint.flowTriggerSenstivity > 5.0f) isOk = false;
+  if (CVmode < 0) isOk = false;  // 
+  if (CVmode > 1) isOk = false;
+  if (assistControl < 0) isOk = false;  // 
+  if (assistControl > 1) isOk = false;
   if (isnan(setpoint.reqBPM)) isOk = false;                    // Check for malformed floating point values (NaN)
   if (isnan(setpoint.reqVolume)) isOk = false;
   if (isnan(setpoint.reqPressure)) isOk = false;
+  if (isnan(setpoint.reqFiO2)) isOk = false;
+  if (isnan(setpoint.reqI_E_Section)) isOk = false;
+  if (isnan(setpoint.flowTriggerSenstivity)) isOk = false;
+  if (isnan(CVmode)) isOk = false;
+  if (isnan(assistControl)) isOk = false;
 
   return isOk;
 }
@@ -164,26 +179,36 @@ void beep() // Launch a beep
 }
 #endif
 
-void eeput(int n) // records to EEPROM (only if values are validated)
+void eeput() // records to EEPROM (only if values are validated)
 {
 #ifdef E2PROM
   int eeAddress = eeStart;
   boolean isOk = checkValues();
 
-  if (n == 1) isOk = true; // override (for debug testing)
+ // if (n == 1) isOk = true; // override (for debug testing)
   if (isOk)
   {
+    EEPROM.put(eeAddress, CVmode);
+    eeAddress += sizeof(uint8_t);
+    EEPROM.put(eeAddress, assistControl);
+    eeAddress += sizeof(uint8_t);
     EEPROM.put(eeAddress, setpoint.reqBPM);
-    eeAddress += sizeof(float);
+    eeAddress += sizeof(uint8_t);
     EEPROM.put(eeAddress, setpoint.reqVolume);
-    eeAddress += sizeof(float);
+    eeAddress += sizeof(uint16_t);
     EEPROM.put(eeAddress, setpoint.reqPressure);
-    eeAddress += sizeof(float);
+    eeAddress += sizeof(uint8_t);
     EEPROM.put(eeAddress, setpoint.reqI_E_Section);
-    eeAddress += sizeof(int);
+    eeAddress += sizeof(uint8_t);
     EEPROM.put(eeAddress, setpoint.reqFiO2);
-    eeAddress += sizeof(float);
+    eeAddress += sizeof(uint8_t);
     EEPROM.put(eeAddress, setpoint.flowTriggerSenstivity);
+    Serial.println(F("User Settings Saved in EEPROM."));
+    
+  }
+  else {
+        Serial.println(F("Unsuccessul savinf in EEPROM"));
+
   }
 #endif
 }
@@ -192,33 +217,58 @@ void eeget()
 {
 #ifdef E2PROM
   int eeAddress = eeStart;
+  EEPROM.get(eeAddress, CVmode);
+  eeAddress += sizeof(uint8_t);
+  EEPROM.get(eeAddress, assistControl);
+  eeAddress += sizeof(uint8_t);
   EEPROM.get(eeAddress, setpoint.reqBPM);
-  eeAddress += sizeof(float);
+  eeAddress += sizeof(uint8_t);
   EEPROM.get(eeAddress, setpoint.reqVolume);
-  eeAddress += sizeof(float);
+  eeAddress += sizeof(uint16_t);
   EEPROM.get(eeAddress, setpoint.reqPressure);
-  eeAddress += sizeof(float);
+  eeAddress += sizeof(uint8_t);
   EEPROM.get(eeAddress, setpoint.reqI_E_Section);
-  eeAddress += sizeof(int);
+  eeAddress += sizeof(uint8_t);
   EEPROM.get(eeAddress, setpoint.reqFiO2);
-  eeAddress += sizeof(float);
+  eeAddress += sizeof(uint8_t);
   EEPROM.get(eeAddress, setpoint.flowTriggerSenstivity);
-  eeAddress += sizeof(float);
-  EEPROM.get(eeAddress, VolCoeffs);
-  eeAddress += sizeof(VolCoeffs);
-  EEPROM.get(eeAddress, PressCoeffs);
-  eeAddress += sizeof(PressCoeffs);
   
-  Serial.println("Saved Coefficients:");
-  Serial.println("Highest to lowest for 3rd order y=ax^3+bx^2+cx+d where x is volume and y is step in mm. for 3rd order equation");
-  for (int i = 0; i <= ORDER; i++)
+  // eeAddress += sizeof(float);
+  // EEPROM.get(eeAddress, VolCoeffs);
+  // eeAddress += sizeof(VolCoeffs);
+  // EEPROM.get(eeAddress, PressCoeffs);
+  // eeAddress += sizeof(PressCoeffs);
+  
+  // Serial.println("Saved Coefficients:");
+  // Serial.println("Highest to lowest for 3rd order y=ax^3+bx^2+cx+d where x is volume and y is step in mm. for 3rd order equation");
+  // for (int i = 0; i <= ORDER; i++)
+  // {
+  //       Serial.print(VolCoeffs[i], 5);
+  //       Serial.print('\t');
+  // }
+  // Serial.println();
+  Serial.println(F("Loaded from EEPROM."));
+  boolean isOK = checkValues();
+  if (!isOK)
   {
-        Serial.print(VolCoeffs[i], 5);
-        Serial.print('\t');
+    setpoint.reqBPM = defaultBPM;
+    setpoint.reqVolume = defaultVolume;
+    setpoint.reqPressure = defaultPressure;
+    setpoint.reqI_E_Section = defaultExpirationRatioIndex;
+    setpoint.reqFiO2        = 60;
+    setpoint.flowTriggerSenstivity = 0.5;
+    CVmode = VOL_CONT_MODE;
+    assistControl = 0;
+    Serial.print(F("Read Default Settings\n")); 
   }
-  Serial.println();
-
-  delay(20000);//for testing only
+  Serial.print(F("CVmode: ")); Serial.println(CVmode);
+  Serial.print(F("assistControl: ")); Serial.println(assistControl);
+  Serial.print(F("req BPM: ")); Serial.println(setpoint.reqBPM);
+  Serial.print(F("req Volume: ")); Serial.println(setpoint.reqVolume);
+  Serial.print(F("req Pressure: ")); Serial.println(setpoint.reqPressure);
+  Serial.print(F("req FiO2: ")); Serial.println(setpoint.reqFiO2);
+  Serial.print(F("req flow Trigger: ")); Serial.println(setpoint.flowTriggerSenstivity);
+  Serial.print(F("req IE Ratio: ")); Serial.print(IE_R_Value[setpoint.reqI_E_Section][0]);Serial.print(F(":")); Serial.println(IE_R_Value[setpoint.reqI_E_Section][1]);
 #else
   setpoint.reqBPM = defaultBPM;
   setpoint.reqVolume = defaultVolume;
@@ -226,7 +276,7 @@ void eeget()
   setpoint.reqI_E_Section = defaultExpirationRatioIndex;
   setpoint.reqFiO2        = 60;
   setpoint.flowTriggerSenstivity = 0.5;
-//  Serial.print("Read Default Settings\n");  //Arduino gets stuck if comment this line
+  Serial.print("Read Default Settings\n"); 
 #endif
 }
 
@@ -245,7 +295,9 @@ void selfTest()
   if (FS.connectionStatus != 0)
   {
     ErrorNumber = FLOW_SENSOR_DISCONNECTED;
+    #ifndef TEL_AT_UART0
     Serial.print(F("Flow Sensor Error Code: ")); Serial.println(FS.connectionStatus);  
+    #endif
     return;
   }
 
@@ -433,7 +485,6 @@ void Monitoring()
       case INSPIRATION_PHASE:
         if (initInsp) {
           TV.inspiration = 0.0; TV.measured = 0.0;
-          setpointAchieved = false;
           peakInspPressure = p_sensor.pressure_gauge_CM;
           initInsp = false;
         }
@@ -527,10 +578,10 @@ void Monitoring()
   Serial.print(" ");
   Serial.print(TV.measured, 5);
   Serial.print(" ");
-  Serial.print(TV.inspiration, 5);
-  Serial.print(" ");
-  Serial.print(TV.expiration, 5);
-  Serial.print(" ");
+//  Serial.print(TV.inspiration, 5);
+//  Serial.print(" ");
+//  Serial.print(TV.expiration, 5);
+//  Serial.print(" ");
   Serial.print(p_sensor.pressure_gauge_CM, 5);
 
   Serial.print(" ");
@@ -669,12 +720,12 @@ void setup()
   PEEPressure = 0.0;
   peakInspPressure = 0.0;
 
-  CVmode = VOL_CONT_MODE; //Volume Controlled Mode
-  calibStatus = ST_COMPLETE;
+  CVmode = VOL_CONT_MODE;//PRESS_CONT_MODE; //Volume Controlled Mode
+  calibStatus = ST_COMPLETE;//ST_NOT_INIT;//ST_COMPLETE;
   calibrationParam = PRESS_CONT_MODE;
 
-  Timer3.initialize(500000);   //microseconds //0.10sec
-  Timer3.attachInterrupt(timer3ISR);
+ // Timer3.initialize(500000);   //microseconds //0.10sec
+ // Timer3.attachInterrupt(timer3ISR);
 
 //  Timer1.initialize(200);
 //  Timer1.attachInterrupt(Timer);
@@ -709,8 +760,10 @@ void setup()
   
   Serial.begin(SERIAL_BAUD);
   Serial2.begin(SERIAL_BAUD);
+  #ifndef TEL_AT_UART0
   #ifdef TX_SERIAL_TELEMETRY
      Serial1.begin(SERIAL_BAUD);
+  #endif
   #endif
 
 
@@ -756,8 +809,9 @@ void setup()
 
   noInterrupts();
   eeget();    // read startup parameters (either from EEPROM or default value)
-//eeput(0);
-
+//  eeput();
+//  eeget();    // read startup parameters (either from EEPROM or default value)
+  
   InitializeParams();
 
 #ifdef CLOSED_LOOP
@@ -781,7 +835,7 @@ void setup()
   if (CVmode == VOL_CONT_MODE)
     control->setConstants(0.8,0.1,deadBand,1200); //values send in this function are needed to be tested.
   else //PRESS_CON_MODE
-    control->setConstants(0.8,0.1,1,40);
+    control->setConstants(0.8,0.1,1,70);
     //Set_constant initialization for pressure control goes here
   // Distance: 40.00mm
   //Pressure: 23.85cmH2O
@@ -789,10 +843,12 @@ void setup()
   // -0.00221921	0.10285785	0.33219816	3.53803133	////Nominal Resistance Test Lung //PEEP = 5cmH2O
 
  // -0.00258854	0.11181313	0.41835732	1.68697428    ///Nominal Resistance Test Lung //PEEP = 5cmH2O	
-   PressCoeffs[0] = -0.00258854;
-  PressCoeffs[1] = 0.11181313;
-  PressCoeffs[2] = 0.41835732;
-  PressCoeffs[3] = 1.68697428;
+ 
+// -0.00025210     0.01868789      0.43968305      -0.32840135 //With Standard Test Lung PEEP= 20cmH2O
+   PressCoeffs[0] = -0.00025210;
+  PressCoeffs[1] = 0.01868789;
+  PressCoeffs[2] = 0.43968305;
+  PressCoeffs[3] = -0.32840135;
 #endif
   interrupts();
 
@@ -820,7 +876,7 @@ void Ventilator_Control()
   static unsigned int Tin = 0;
   static unsigned int Tex = 0;
   static unsigned int Th = 0; //ms
-  static unsigned int Ttrigger = 300; //ms
+  static unsigned int Ttrigger = 500; //ms
   static uint16_t Tcur = 0;
   static unsigned long BreathStartTimestamp = 0;
 
@@ -839,6 +895,8 @@ void Ventilator_Control()
   static float stepsPredicted = 0.0;
 
   static boolean init = true;
+
+  static boolean skipStep=1;
 
   //    noInterrupts();
 //  CVmode = VOL_CONT_MODE; //Proto-1
@@ -882,17 +940,31 @@ void Ventilator_Control()
       if (CVmode != selectedControlMode)
       {
         selectedControlMode = CVmode;
-        control->resetController();
+
+
+
+        if (CVmode == VOL_CONT_MODE){
+          control->setConstants(0.8,0.1,20,1200);
+          control->resetController((float)setpoint.curVolume);
+        }
+        else if(CVmode == PRESS_CONT_MODE){
+          control->setConstants(0.8,0.1,1,70);
+          control->resetController((float)setpoint.curPressure);
+        }
+          skipStep=1;
+        
       }
       if (abs(setpoint.curVolume - setpoint.reqVolume) >= 1) {
         setpoint.curVolume = setpoint.reqVolume;
-        if (CVmode == VOL_CONT_MODE)
-          control->resetController();
+        if (CVmode == VOL_CONT_MODE) {
+          control->resetController((float)setpoint.curVolume);
+          skipStep=1;}
       }
       if (abs(setpoint.curPressure - setpoint.reqPressure) >= 1) {
         setpoint.curPressure = setpoint.reqPressure;
-        if(CVmode == PRESS_CONT_MODE)
-          control->resetController();
+        if(CVmode == PRESS_CONT_MODE) {
+          control->resetController((float)setpoint.curPressure);
+          skipStep=1; }
       }
       setpoint.curBPM = setpoint.reqBPM;                 // Load Fresh User Settings
       setpoint.curI_E = IE_R_Value[setpoint.reqI_E_Section][1]; //Exhale Factor
@@ -904,10 +976,13 @@ void Ventilator_Control()
       Tex = (int)(breathLength - Th - Tin);
       if (CVmode == VOL_CONT_MODE) {
 
-      #ifdef CLOSED_LOOP
-          stepsPredicted = control->compensateError((float)setpoint.curVolume,TV.inspiration);
-      #endif
-
+     if(!skipStep){
+      stepsPredicted = control->compensateError((float)setpoint.curVolume,TV.inspiration);    
+     }
+      else{
+      stepsPredicted= setpoint.curVolume;  
+   skipStep=0;
+     }
 //        reqMotorPos = setpoint.curVolume / LINEAR_FACTOR_VOLUME; //mm
         reqMotorPos = (VolCoeffs[0] * pow(stepsPredicted, 3)) + (VolCoeffs[1] * pow(stepsPredicted, 2)) + (VolCoeffs[2] * stepsPredicted) + VolCoeffs[3];
        // reqMotorPos = stepsPredicted;
@@ -915,7 +990,14 @@ void Ventilator_Control()
       }
       else //PRESS_CONT_MODE 
       {
+        
+      if(!skipStep){
         stepsPredicted = control->compensateError((float)setpoint.curPressure, plateauPressure);
+      }
+      else{
+        stepsPredicted= setpoint.curPressure;  
+        skipStep=0;
+      }
         reqMotorPos = (PressCoeffs[0] * pow(stepsPredicted, 3)) + (PressCoeffs[1] * pow(stepsPredicted, 2)) + (PressCoeffs[2] * stepsPredicted) + PressCoeffs[3];
        // reqMotorPos = stepsPredicted;
         reqMotorPos = constrain(reqMotorPos, 0.0, 40.0);
@@ -931,6 +1013,7 @@ void Ventilator_Control()
         BreathStartTimestamp = millis();
 
 //#ifdef __DEBUG
+#ifndef TEL_AT_UART0
           static int i = 0;
            Serial.print(F("In Ventilator Control: ")); Serial.println(i++);
            Serial.print(F("Control Mode:      ")); Serial.println(CVmode); //0 = VOL; 1 = PRESS          
@@ -946,7 +1029,7 @@ void Ventilator_Control()
            Serial.print(F("Steps Exp:             ")); Serial.println(stepEx);
            Serial.print(F("Period Insp:           ")); Serial.print(periodIn); Serial.println(F(" us"));
            Serial.print(F("Period Exp:            ")); Serial.print(periodEx); Serial.println(F(" us"));
-           
+#endif           
            
 //#endif
     }
@@ -976,8 +1059,8 @@ void Ventilator_Control()
       {
         if (initHld)
         {
-          slave.runAck = 2;
-          txSlaveCMD(STOP);
+         slave.runAck = 2;
+         txSlaveCMD(STOP);
           slave.lastCMD_ID = STOP;
 //          slave.stopAck = 0;
           initHld = false;
@@ -1020,7 +1103,9 @@ void Ventilator_Control()
   }
   else
   {
+    #ifndef TEL_AT_UART0
     //      Serial.println(F("Ventilator Operation Halt"));
+    #endif
     if (initWait) {slave.homeAck = 0; initWait = false;}
     initHld = true;
     initIns = true;
@@ -1113,6 +1198,7 @@ void GetTelData()
 void loop()
 {
 
+  static unsigned long tick3 = 0;
   unsigned long start_Ts = 0;
   WarmUpFlag = 0;
 #ifdef StepGen
@@ -1159,14 +1245,14 @@ void loop()
 //Serial.print(F("Busy Time 2: ")); Serial.println(micros()-start_Ts);
     }
   }
-  if (timer3InterruptTriggered)
+//  if (timer3InterruptTriggered)
+  if (millis() > (tick3 + 500))
   {
+    tick3 = millis();
     readSwitches();
-//     Serial.println("Entering Display Func");
-//     start_Ts = micros();
+     start_Ts = micros();
      Display();
-// Serial.print("Busy Time Display: "); Serial.println(micros()-start_Ts);
-//     Serial.println("Exiting Display Func");
+     Serial.print("Busy Time Display: "); Serial.println(micros()-start_Ts);
 // #ifdef Beeper
 //   if (SnoozeButton == 1)
 //   {
@@ -1174,7 +1260,7 @@ void loop()
 //     ErrorNumber = 0;
 //   }
 // #endif
-    timer3InterruptTriggered = false;
+  //  timer3InterruptTriggered = false;
   }
 }
 
@@ -1193,7 +1279,9 @@ void serialEvent2() {
       // if the incoming character is a newline, set a flag so the main loop can
       // do something about it:
       if (inChar == '\r') {
+        #ifndef TEL_AT_UART0
       Serial.println(slave.AckStr);
+      #endif
         slave.strComplete = true;
       }
     }
@@ -1258,5 +1346,7 @@ void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String
     break;
   }
   Serial2.print(cmdString);
+#ifndef TEL_AT_UART0
   Serial.println(cmdString);
+  #endif
 }

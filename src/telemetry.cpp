@@ -134,13 +134,21 @@ void Prepare_Tx_Telemetry()
 
         TEL_BUFF[TEL_PACKET_LENGTH-1] = (checksum & 0xFF);
         TEL_BUFF[TEL_PACKET_LENGTH] = 13; //CR
-
+#ifdef TEL_AT_UART0
+        if (Serial.availableForWrite() >= (TEL_PACKET_LENGTH+1))
+        {
+            TEL.FDCB = 0xFF;
+            Serial.write(TEL_BUFF, TEL_PACKET_LENGTH+1);
+            ctr++;        
+        }
+#else
         if (Serial1.availableForWrite() >= (TEL_PACKET_LENGTH+1))
         {
             TEL.FDCB = 0xFF;
             Serial1.write(TEL_BUFF, TEL_PACKET_LENGTH+1);
             ctr++;        
         }
+#endif
     }
 /*  int NData = 12;
   String str_Payload;

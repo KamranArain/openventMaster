@@ -19,10 +19,10 @@ float Control::compensateError(float setPoint,float measured){
       if(valuePredicted<=errorLimit)
       currentValuePredicted=currentValuePredicted+valuePredicted; //Total Steps added/subtracted From begining of cycle.
       else{
-      currentValuePredicted=0;
+      currentValuePredicted=selectedSetPoint;
       }
   
-      valuePredicted=currentValuePredicted;
+      valuePredicted=fabs(currentValuePredicted);
 
       return valuePredicted;
 }
@@ -35,10 +35,13 @@ void Control::setConstants(float kp,float ki,float bandIntegral,float eLimit){
      integralStartBand=integralStartBand;
      errorLimit=eLimit;     
      valuePredicted=0;
+     selectedSetPoint=0;
+     discreteIntegral=0;
                
 }
 
-void Control::resetController(){
+void Control::resetController(float sP){
   discreteIntegral=0;
-  valuePredicted=0;  
+  selectedSetPoint=sP;
+  valuePredicted=selectedSetPoint;  
 }

@@ -16,7 +16,7 @@ double PressCoeffs[ORDER_PRESS_EQ+1];
 
 void calibrate(int calibParam){
 
-  unsigned int period = 2000; //us
+  unsigned int period = 1000; //us
  
   static double steps[(STEPPERRANGE/stepSize)+1]; //mm
   static double volume[(STEPPERRANGE/stepSize)+1]; 
@@ -37,7 +37,9 @@ void calibrate(int calibParam){
     pressureArray[0] = p_sensor.pressure_gauge_CM;
     if (calibParam == VOL_CONT_MODE)
       TV.measured = 0.0;
+      #ifndef TEL_AT_UART0
     Serial.println(F("Inside Calibration Routine"));
+    #endif
     delay(5000);//for testing only
     init = false;    
   }
@@ -89,11 +91,13 @@ void calibrate(int calibParam){
         slave.homeAck = 0;
         if (calibParam == VOL_CONT_MODE)
           TV.measured = 0.0;
+          #ifndef TEL_AT_UART0
         Serial.print(F("Distance: "));Serial.print(steps[j]);Serial.println(F("mm"));
         if (calibParam == VOL_CONT_MODE) {
           Serial.print(F("Volume: "));Serial.print(volume[j]);Serial.println(F("ml")); }
         else {
           Serial.print(F("Pressure: "));Serial.print(pressureArray[j]);Serial.println(F("cmH2O")); }
+          #endif
         i +=stepSize;
         j++;
       }
@@ -127,15 +131,17 @@ void calibrate(int calibParam){
       if (ret == 0){ //Returned value is 0 if no error
         
         #ifdef E2PROM
-        int eeAddress = ee_Vol_Coef_a;
-        EEPROM.put(eeAddress, VolCoeffs);
+//        int eeAddress = ee_Vol_Coef_a;
+  //      EEPROM.put(eeAddress, VolCoeffs);
   //      eeAddress += sizeof(VolCoeffs);
         #endif
+        #ifndef TEL_AT_UART0
       Serial.println(F("Highest to lowest Eq Coeffs x=V & y=mm"));
         for (byte k = 0; k < sizeof(VolCoeffs)/sizeof(double); k++){
           Serial.print(VolCoeffs[k], 8);
           Serial.print(F("\t"));
         }
+        #endif
   //      delay(20000);//for testing only
       }
     }
@@ -145,15 +151,17 @@ void calibrate(int calibParam){
       if (ret == 0){ //Returned value is 0 if no error
         
         #ifdef E2PROM
-        int eeAddress = ee_Press_Coef_a;
-        EEPROM.put(eeAddress, PressCoeffs);
+    //    int eeAddress = ee_Press_Coef_a;
+     //   EEPROM.put(eeAddress, PressCoeffs);
   //      eeAddress += sizeof(PressCoeffs);
         #endif
+        #ifndef TEL_AT_UART0
       Serial.println(F("Highest to lowest Eq Coeffs x=P & y=mm"));
         for (byte k = 0; k < sizeof(PressCoeffs)/sizeof(double); k++){
           Serial.print(PressCoeffs[k], 8);
           Serial.print("\t");
         }
+        #endif
         delay(20000);//for testing only
       }
     }
