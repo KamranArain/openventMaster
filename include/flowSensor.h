@@ -6,13 +6,19 @@
 #define I2C_ADDR_SFM 64 // 0x40 //Default for SFM3000, SFM3200, SFM3200AW and SFM3300
 #endif
 
+#if defined(FLOW_SENSOR_CN)
+#define I2C_ADDR_FS 0x50
+#endif
+
 //#define APPLY_Q_CORRECTION_FACTOR
 
 void initFlowSensor();
 
 float getFlowValue();
 
+#if defined(SFM3200AW)
 float getCorrectedFlowValue(int phase);
+#endif
 
 float mapFloat(float value, float fromLow, float fromHigh, float toLow, float toHigh);
 
@@ -25,6 +31,7 @@ struct Flow_Sensor
 //  unsigned int offsetTemperature = 20000; // Offset for the sensor for SFM3200AW Only
 //  float scaleFactorTemperature = 100.0; // Scale factor for Temperature for SFM3200AW Only
   float Q_SLM = 0.0;
+  uint8_t sensorHealth;
 };
 
 #endif

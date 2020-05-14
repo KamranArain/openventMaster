@@ -21,9 +21,9 @@ SFM3x00::SFM3x00(int i2cAddress)
 
 byte SFM3x00::init()
 {
-	int a = 0;
-	int b = 0;
-	int c = 0; 
+	// int a = 0;
+	// int b = 0;
+	// int c = 0; 
 	byte connection_status = 255;
 	
  
@@ -38,9 +38,9 @@ byte SFM3x00::init()
 	delay(5);
 	
 	Wire.requestFrom(mI2cAddress, 3); //
-	a = Wire.read(); // first received byte stored here
-	b = Wire.read(); // second received byte stored here
-	c = Wire.read(); // third received byte stored here
+	Wire.read(); // first received byte stored here
+	Wire.read(); // second received byte stored here
+	Wire.read(); // third received byte stored here
 
 	Wire.endTransmission();
 //	Serial.print(a);
@@ -50,9 +50,9 @@ byte SFM3x00::init()
 	delay(5);
 	
 	Wire.requestFrom(mI2cAddress, 3); //
-	a = Wire.read(); // first received byte stored here
-	b = Wire.read(); // second received byte stored here
-	c = Wire.read(); // third received byte stored here
+	Wire.read(); // first received byte stored here
+	Wire.read(); // second received byte stored here
+	Wire.read(); // third received byte stored here
 	Wire.endTransmission();
 //	Serial.print(a);
 //	Serial.print(b);
@@ -62,23 +62,30 @@ byte SFM3x00::init()
 	return connection_status;
 }
  
-float SFM3x00::getvalue()
+uint16_t SFM3x00::getvalue()
 {
+	uint16_t Flow;
     Wire.requestFrom(mI2cAddress, 3); // read 3 bytes from device with address 0x40
 	uint16_t a = Wire.read(); // first received byte stored here. The variable "uint16_t" can hold 2 bytes, this will be relevant later
 	uint8_t b = Wire.read(); // second received byte stored here
 	uint8_t crc = Wire.read(); // crc value stored here
+	
+	//connectionStatus = Wire.endTransmission();
+	
 	uint8_t mycrc = 0x00;   // 0xFF; // initialize crc variable
 	mycrc = crc8(a, mycrc); // let first byte through CRC calculation
 	mycrc = crc8(b, mycrc); // and the second byte too
 	if (mycrc != crc) { // check if the calculated and the received CRC byte matches
+		dataValidity = DATA_INVALID;
 	//	Serial.println("Error: wrong CRC");
 	//	return 0.0;
 	}
+	else {dataValidity =  DATA_VALID;}
 	a = (a << 8) | b; // combine the two received bytes to a 16bit integer value
 	// a >>= 2; // remove the two least significant bits
 	//float Flow = (float)a;
-	int Flow=a;
+	//int Flow=a;
+	Flow = a;
 	return Flow;
 }
 
@@ -93,6 +100,11 @@ uint8_t SFM3x00::crc8(const uint8_t data, uint8_t crc)
 	return crc;
 }
 
+
+uint8_t SFM3x00::checkDataValidity()
+{
+	return dataValidity;
+}
 
 
 

@@ -18,6 +18,7 @@ lcd.leftToRight();
 lcd.home();
 */
 
+#define DISPLAY_WELCOME     0
 #define DISPLAY_FIO2        1
 #define DISPLAY_T_V         2 
 #define DISPLAY_RR          3 
@@ -36,6 +37,7 @@ lcd.home();
 
 #define DISPLAY_INPUT       17
 #define DISPLAY_CLEAR       18
+#define DISPLAY_CAUTION     90
 #define DISCARD_INPUT       99
 
 
@@ -64,6 +66,7 @@ void LCD_setup();
 void InitializeParams();
 void Display();
 void readSwitches();
+void V_Mode_Breakdown();
 
 
 #endif

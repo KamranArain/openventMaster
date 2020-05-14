@@ -7,6 +7,7 @@ extern struct Slave slave;
 extern struct TidalVolume TV;
 extern struct P_Sensor p_sensor;
 
+byte calibrationParam;
 byte calibStatus = ST_NOT_INIT;//ST_NOT_INIT;//ST_COMPLETE;//
 byte estimateVolume = false;
 
@@ -159,7 +160,7 @@ void calibrate(int calibParam){
       Serial.println(F("Highest to lowest Eq Coeffs x=P & y=mm"));
         for (byte k = 0; k < sizeof(PressCoeffs)/sizeof(double); k++){
           Serial.print(PressCoeffs[k], 8);
-          Serial.print("\t");
+          Serial.print(F("\t"));
         }
         #endif
         delay(20000);//for testing only

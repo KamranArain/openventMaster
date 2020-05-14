@@ -1,11 +1,17 @@
 #include "header.h"
 #include "flowSensor.h"
+#include "Wire.h"
 
 #if defined(SFM3200AW)
 SFM3x00 measflow(I2C_ADDR_SFM);
 #endif
 
 struct Flow_Sensor FS;
+#if defined(FLOW_SENSOR_CN)
+void get_sensor_data(byte *a, byte *b);
+#endif
+
+extern struct Slave slave;
 
 void initFlowSensor()
 {
@@ -19,21 +25,48 @@ void initFlowSensor()
 
 //    FS.offsetTemperature = 20000; // Offset for the sensor
 //    FS.scaleFactorTemperature = 100.0; // Scale factor for Temperature
-
+    FS.sensorHealth = HEALTH_BAD;
     FS.connectionStatus = measflow.init();
+    #endif
+
+    #if defined(FLOW_SENSOR_CN)
     #endif
 }
 
 float getFlowValue()
 {
+    #ifdef SFM3200AW
     float volFlowRate = 0.0;
     unsigned int rawVal = 0.0;
     rawVal = measflow.getvalue();
     volFlowRate = ((float)rawVal - FS.offsetFlow) / (FS.scaleFactorFlow_Air);
     volFlowRate = (-1.0) * volFlowRate;
+
+    uint8_t dataValid = measflow.checkDataValidity();
+    if (dataValid == DATA_VALID)
+        FS.sensorHealth = HEALTH_GOOD;
+    else if (dataValid == DATA_INVALID)
+        FS.sensorHealth = HEALTH_BAD;
+
     return volFlowRate;
+    #endif
+
+    #ifdef FLOW_SENSOR_CN
+    byte a0,a1;
+    get_sensor_data(&a0,&a1);
+    //long unsigned raw = (a0 & 0x3F) << 8; //0011 1111 0x3F
+    long unsigned raw = (a0<<8) | a1;
+    float v = (float)raw;
+    v = v-300.0
+    v = c*2.0;
+    // if (v>0)
+    //   v = v*1.102
+    return v;
+    #endif
+
 }
 
+#if defined(SFM3200AW)
 float getCorrectedFlowValue(int phase)
 {
     float volFlowRate = 0.0;
@@ -89,7 +122,47 @@ float getCorrectedFlowValue(int phase)
 
     return correctedFlowRate;
 }
+#endif
 
 float mapFloat(float value, float fromLow, float fromHigh, float toLow, float toHigh) {
   return (value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow) + toLow; 
 }
+
+
+#if defined(FLOW_SENSOR_CN)
+void get_sensor_data(byte *a, byte *b) {
+  
+    Wire.beginTransmission(I2C_ADDR_FS);
+    Wire.write(1);
+    Wire.endTransmission();
+    FS.connectionStatus = Wire.endTransmission();
+    //delay(1);
+    Wire.requestFrom(I2C_ADDR_FS, 2);
+    *a = Wire.read();
+    *b = Wire.read();
+    
+    if (FS.connectionStatus != 0)
+        FS.sensorHealth = HEALTH_BAD;
+    else FS.sensorHealth = HEALTH_GOOD;
+
+//   if (status.homeAtBadFlowSensor)
+//   {
+//     Serial.println("Waiting For Homing Complete: Flow Sensor");
+//   }
+//   else {
+//     Wire.beginTransmission(I2C_ADDR_FS);
+//     Wire.write(1);
+//     Wire.endTransmission();
+//     FS.connectionStatus = Wire.endTransmission();
+//     //delay(1);
+//     Wire.requestFrom(I2C_ADDR_FS, 2);
+//     *a = Wire.read();
+//     *b = Wire.read();
+//   }
+
+//   if (FS.connectionStatus != 0)
+//     FS.sensorHealth = HEALTH_BAD;
+//   else FS.sensorHealth = HEALTH_GOOD;
+}
+
+#endif

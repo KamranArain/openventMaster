@@ -1,13 +1,12 @@
 #include "header.h"
 #include "userInterface.h"
+#include "alarms.h"
 
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
-extern uint8_t CVmode;
-extern uint8_t assistControl;
-extern uint8_t activateVentilatorOperation;
+extern bool activateVentilatorOperation;
 extern struct setpointStatus setpoint;
-
+extern struct ALARMS Alarms;
 
 void Display_menu_1(void);
 void Display_menu_2(void);
@@ -18,50 +17,38 @@ void KeyPressed();           //ISR function
 
 bool key_int_flag = false;
 unsigned int key_value = 0;
-unsigned int display_screen_state = 1;
+unsigned int display_screen_state = DISPLAY_WELCOME;
 unsigned int display_screen_Next_state = 0;
 unsigned int new_value = 0;
 
 /*
  * Default Parameters
  */
-#define VENT_MODE_VCV       0
-#define VENT_MODE_PCV       1
-#define VENT_MODE_AC_VCV    2
-#define VENT_MODE_AC_PCV    3
 
 uint8_t IE_R_Value[3][2] = { {1,1},{1,2},{1,3}};
-char VentMode[4][7]= {  "VCV   ",  "PCV   ",  "AC-VCV",  "AC-PCV" };
-/*
-unsigned int Param_FiO2     = 75;     // FiO2
-unsigned int Param_TV       = 200;    // Tidal Volume
-unsigned int Param_RR       = 20;     // Respiratory Rate
-unsigned int Param_PC       = 20;     // Pressure Control
-unsigned int Param_IE_R     = 1;      // I:E Ratio
-float        Param_TRIG     = 0.5;             // Triggering
-unsigned int Param_vMode    = VENT_MODE_VCV;
+uint8_t FiO2_Value[4][2] = { {30,40},{50,60},{70,80}, {90,100}};
 
-unsigned int Param_New_vMode  = 0;
-float        Param_New_TRIG   = 0;
-unsigned int Param_New_IE_R   = 1;
-*/
+char VentMode[5][7]= {  "VCV   ",  "PCV   ",  "AC-VCV",  "AC-PCV" , "CPAP  "};
 
-uint8_t Param_FiO2     = 75;     // FiO2
-uint16_t Param_TV       = 200;    // Tidal Volume
-uint8_t Param_RR       = 20;     // Respiratory Rate
-uint8_t Param_PC       = 20;     // Pressure Control
-uint8_t Param_IE_R     = 1;      // I:E Ratio
-float        Param_TRIG     = 0.5;             // Triggering
-uint8_t Param_vMode    = VENT_MODE_VCV;
 
-uint8_t Param_New_vMode  = 0;
-float        Param_New_TRIG   = 0;
-uint8_t Param_New_IE_R   = 1;
+// For Initial Values See setup() function in main.cpp
+uint8_t   Set_Param_FiO2     = 1;     // FiO2
+uint16_t  Set_Param_TV       = 200;    // Tidal Volume
+uint8_t   Set_Param_RR       = 20;     // Respiratory Rate
+uint8_t   Set_Param_PC       = 20;     // Pressure Control
+uint8_t   Set_Param_IE_R     = 1;      // I:E Ratio
+float     Set_Param_TRIG     = 0.5;             // Triggering
+uint8_t   Set_Param_vMode    = VENT_MODE_VCV;
+
+uint8_t   Set_Param_New_vMode  = 0;
+float     Set_Param_New_TRIG   = 0;
+uint8_t   Set_Param_New_IE_R   = 1;
+uint8_t   Set_Param_New_FiO2   = 1;     // FiO2
 
 
 
 void LCD_setup() {
-  attachInterrupt(digitalPinToInterrupt(2), KeyPressed, FALLING); 
+  attachInterrupt(digitalPinToInterrupt(pin_KEYPAD_INTERRUPT), KeyPressed, FALLING); 
   
   lcd.init();                      
   lcd.backlight();
@@ -72,22 +59,13 @@ void LCD_setup() {
 }
 
 void InitializeParams() {
-  Param_FiO2     = setpoint.reqFiO2;     // FiO2
-  Param_TV       = setpoint.reqVolume;    // Tidal Volume
-  Param_RR       = setpoint.reqBPM;     // Respiratory Rate
-  Param_PC       = setpoint.reqPressure;     // Pressure Control
-  Param_TRIG     = setpoint.flowTriggerSenstivity;             // Triggering
-  Param_IE_R     = setpoint.reqI_E_Section;      // I:E Ratio
-
-  if (CVmode == VOL_CONT_MODE) {
-    if (assistControl == 1) Param_vMode = VENT_MODE_AC_VCV;
-    else Param_vMode = VENT_MODE_VCV;
-  }
-  else { 
-    //PRESS_CONT_MODE
-    if (assistControl == 1) Param_vMode = VENT_MODE_AC_PCV;
-    else Param_vMode = VENT_MODE_PCV;
-  }
+  Set_Param_vMode    = setpoint.reqVentMode;
+  Set_Param_FiO2     = setpoint.reqFiO2;     // FiO2
+  Set_Param_TV       = setpoint.reqVolume;    // Tidal Volume
+  Set_Param_RR       = setpoint.reqBPM;     // Respiratory Rate
+  Set_Param_PC       = setpoint.reqPressure;     // Pressure Control
+  Set_Param_TRIG     = setpoint.flowTriggerSenstivity;             // Triggering
+  Set_Param_IE_R     = setpoint.reqI_E_Section;      // I:E Ratio
 }
 
 void Display_menu_1(void)
@@ -97,25 +75,25 @@ void Display_menu_1(void)
     
     // Display FiO2
     lcd.setCursor(0, 0);
-    sprintf(displayStr, "FiO2= %u %%", Param_FiO2);
+    sprintf(displayStr, "FiO2 = %u-%u %%", FiO2_Value[Set_Param_FiO2][0], FiO2_Value[Set_Param_FiO2][1]);
     lcd.print(displayStr);
     
     // Display Tidal Volume
     lcd.setCursor(0, 1);
     displayStr[20]={};
-    sprintf(displayStr, "T.V = %u ml", Param_TV);
+    sprintf(displayStr, "T.V = %u ml", Set_Param_TV);
     lcd.print(displayStr);
 
     // Display Respiratory Rate
     lcd.setCursor(0, 2);
     displayStr[20]={};
-    sprintf(displayStr, "RR= %u BPM", Param_RR);
+    sprintf(displayStr, "RR= %u BPM", Set_Param_RR);
     lcd.print(displayStr);
 
     // Display Pressure Control
     lcd.setCursor(0, 3);
     displayStr[20]={};
-    sprintf(displayStr, "PC= %u cm H2O", Param_PC);
+    sprintf(displayStr, "PC= %u cm H2O", Set_Param_PC);
     lcd.print(displayStr);
 }
 
@@ -126,29 +104,29 @@ void Display_menu_2(void)
 
     // Display I:E Ratio
     lcd.setCursor(0, 0);
-    sprintf(displayStr, "I.E = %u:%u", IE_R_Value[Param_IE_R][0], IE_R_Value[Param_IE_R][1]);
+    sprintf(displayStr, "I.E = %u:%u", IE_R_Value[Set_Param_IE_R][0], IE_R_Value[Set_Param_IE_R][1]);
     lcd.print(displayStr);
 
     // Display Triggering
     lcd.setCursor(0, 1);
-    lcd.print("Trig= ");
-    lcd.print(Param_TRIG);
-    lcd.print(" SLPM");
+    lcd.print(F("Trig= "));
+    lcd.print(Set_Param_TRIG);
+    lcd.print(F(" SLPM"));
     
     // Display Vent mode
     lcd.setCursor(0, 2);
-    lcd.print("Vent Mode = ");
-    lcd.print(VentMode[Param_vMode]);
+    lcd.print(F("Vent Mode = "));
+    lcd.print(VentMode[Set_Param_vMode]);
     
     // for future values
     //lcd.setCursor(0, 3);
-    //lcd.print("enter new parm");
+    //lcd.print(F("enter new parm"));
 }
 
 void get_value(void)
 {
   // if the display state is edit mode
-  if( display_screen_Next_state>=1 && display_screen_Next_state <=7)
+  if( display_screen_Next_state>=2 && display_screen_Next_state <=4) //Input not applicable on FiO2; IE Ratio; Vent Mode and Trigger Settings
   {
     // check the key pressed
     if (key_value>=0 && key_value <=9)
@@ -166,36 +144,30 @@ void Input_Validation(void) ///
     switch(display_screen_Next_state)
     {
       case DISPLAY_FIO2:
-          if( new_value >=50 && new_value <= 100)
-          {
-            Param_FiO2 = new_value;
-            setpoint.reqFiO2 = (float)(Param_FiO2);
+          Set_Param_FiO2 = Set_Param_New_FiO2;
+          setpoint.reqFiO2 = Set_Param_FiO2;
             updateEEPROM = true;
-            new_value = 0;
-          }
-          else
-          {
-            new_value = 0;
-          }
           break;
        case DISPLAY_T_V:
-          if( new_value >= 200 && new_value <=800)
-          {
-            Param_TV = new_value;
-            setpoint.reqVolume = (float)(Param_TV);
-            updateEEPROM = true;
-            new_value = 0;
-          }
-          else
-          {
-            new_value = 0;
-          }
-          break;
+         {
+            if( new_value >= minVolume && new_value <=maxVolume)
+            {
+              Set_Param_TV = new_value;
+              setpoint.reqVolume = Set_Param_TV;
+              updateEEPROM = true;
+              new_value = 0;
+            }
+            else
+            {
+              new_value = 0;
+            }
+         }
+         break;
        case DISPLAY_RR:
-          if( new_value >= 8 && new_value <=35)
+          if( new_value >= minBPM && new_value <=maxBPM)
           {
-            Param_RR = new_value;
-            setpoint.reqBPM = (float)(Param_RR);
+            Set_Param_RR = new_value;
+            setpoint.reqBPM = Set_Param_RR;
             updateEEPROM = true;
             new_value = 0;
           }
@@ -205,50 +177,38 @@ void Input_Validation(void) ///
           }
           break;
         case DISPLAY_PC:
-          if( new_value >= 0 && new_value <=40)
           {
-            Param_PC = new_value;
-            setpoint.reqPressure = (float)(Param_PC);
-            updateEEPROM = true;
-            new_value = 0;
-          }
-          else
-          {
-            new_value = 0;
+            uint8_t min = minPressure;
+            uint8_t max = maxPressure;
+            if (setpoint.reqEnableCPAP_F == 1) { min = minPressureCPAP; max = maxPressureCPAP;}
+            if( new_value >= min && new_value <= max)
+            {
+              Set_Param_PC = new_value;
+              setpoint.reqPressure = Set_Param_PC;
+              updateEEPROM = true;
+              new_value = 0;
+            }
+            else
+            {
+              new_value = 0;
+            }
           }
           break;
         case DISPLAY_TRIG:
-          Param_TRIG = Param_New_TRIG;
-          setpoint.flowTriggerSenstivity = Param_TRIG;
+          Set_Param_TRIG = Set_Param_New_TRIG;
+          setpoint.flowTriggerSenstivity = Set_Param_TRIG;
             updateEEPROM = true;
           break;
         case DISPLAY_I_E:
-          Param_IE_R = Param_New_IE_R;
-          setpoint.reqI_E_Section = Param_IE_R;
+          Set_Param_IE_R = Set_Param_New_IE_R;
+          setpoint.reqI_E_Section = Set_Param_IE_R;
             updateEEPROM = true;
           break;
         case DISPLAY_VMODE:
-          Param_vMode = Param_New_vMode;
-          switch (Param_vMode)
-          {
-          case VENT_MODE_VCV:
-            CVmode = VOL_CONT_MODE;
-            break;
-          case VENT_MODE_PCV:
-            CVmode = PRESS_CONT_MODE;
-            break;
-          case VENT_MODE_AC_VCV:
-            CVmode = VOL_CONT_MODE;
-            assistControl = 1;
-            break;
-          case VENT_MODE_AC_PCV:
-            CVmode = PRESS_CONT_MODE;
-            assistControl = 1;
-            break;          
-          default:
-            break;
-          }
-            updateEEPROM = true;
+          Set_Param_vMode = Set_Param_New_vMode;
+          setpoint.reqVentMode = Set_Param_vMode;
+          V_Mode_Breakdown();
+          updateEEPROM = true;
           break;
         default:
           new_value = 0;
@@ -265,7 +225,7 @@ void clear_value(void)
   if( display_screen_Next_state>=1 && display_screen_Next_state <=7)
   {
     lcd.setCursor(0, 3);
-    lcd.print("New Value =        ");
+    lcd.print(F("New Value =        "));
     lcd.setCursor(12, 3);
     new_value= 0;
   }
@@ -273,20 +233,224 @@ void clear_value(void)
 
 void Display(void)
 {
-  if(key_int_flag)
+  if(Alarms.Flag_alarm)
+  {
+      Alarms.Flag_alarm = false;
+      if( Alarms.previous_alarm != Alarms.set_alarm)
+      {
+            if (display_screen_state == DISPLAY_SET_FiO2)
+              display_screen_Next_state = DISPLAY_SET_FiO2;
+            else if (display_screen_state == DISPLAY_SET_I_E)
+              display_screen_Next_state = DISPLAY_SET_I_E;
+            else if (display_screen_state == DISPLAY_SET_TRIG)
+              display_screen_Next_state = DISPLAY_SET_TRIG;
+            else if (display_screen_state == DISPLAY_SET_VMODE)
+              display_screen_Next_state = DISPLAY_SET_VMODE;
+            
+            lcd.clear();
+            lcd.setCursor(6, 0);
+            lcd.print(F("ALARM !!"));
+            lcd.setCursor(0, 1);
+            lcd.setCursor(0, 2);
+            lcd.setCursor(0, 3);
+            
+            // ACTION BASED ON SET ALARM
+            switch(Alarms.set_alarm)
+            {
+                case BATTERY_ALARM_PRIORITY:
+                      lcd.setCursor(1, 2);
+                      lcd.print(F("SYSTEM ON BATTERY"));
+                      break;
+                case CKT_INTEGRITY_ALARM_PRIORITY:
+                      lcd.setCursor(1, 2);
+                      lcd.print(F("CIRCUIT INTEGRITY"));
+                      break;
+                case OXYGEN_ALARM_PRIORITY:
+                      lcd.setCursor(3, 2);
+                      lcd.print(F("OXYGEN FAILURE"));
+                      break;
+                case VENT_DIS_ALARM_PRIORITY:
+                      lcd.setCursor(5, 2);
+                      lcd.print(F("VENTILATOR"));
+                      lcd.setCursor(4, 3);
+                      lcd.print(F("DISCONNECTED"));
+                      break;
+                case PRESSURE_DIS_ALARM_PRIORITY:
+                      lcd.setCursor(2, 2);
+                      lcd.print(F("PRESSURE SENSOR"));
+                      lcd.setCursor(4, 3);
+                      lcd.print(F("DISCONNECTED"));
+                      break;
+                case MECHANICAL_INT_ALARM_PRIORITY:
+                      lcd.setCursor(0, 2);
+                      lcd.print(F("MECHANICAL INTEGRITY"));
+                      lcd.setCursor(6, 3);
+                      lcd.print(F("FAILURE"));
+                      break;
+                case HOMING_NOT_DONE_ALARM_PRIORITY:
+                      lcd.setCursor(2, 2);
+                      lcd.print(F("HOMING NOT DONE"));
+                      break;
+                case HOURS_96_ALARM_PRIORITY:
+                      lcd.setCursor(6, 2);
+                      lcd.print(F("96 HOURS"));
+                      break;
+                case FLOW_SENSOR_DIS_ALARM_PRIORITY:
+                      lcd.setCursor(4, 2);
+                      lcd.print(F("FLOW SENSOR"));
+                      lcd.setCursor(4, 3);
+                      lcd.print(F("DISCONNECTED"));
+                      break;
+                case O2_SENSOR_DIS_ALARM_PRIORITY:
+                      lcd.setCursor(5, 2);
+                      lcd.print(F("O2 SENSOR"));
+                      lcd.setCursor(4, 3);
+                      lcd.print(F("DISCONNECTED"));
+                      break;
+
+                //
+
+                case RR_RATE_ALARM_PRIORITY:
+                      lcd.setCursor(2, 2);
+                      lcd.print(F("RESPIRATORY RATE"));
+                      lcd.setCursor(7, 3);
+                      if(Alarms.Alarm_type_RR == VALUE_HIGH)
+                      {
+                        lcd.print(F("HIGH"));
+                      }
+                      else
+                      {
+                        lcd.print(F("LOW"));
+                      }
+                      
+                      
+                      break;
+              case PEAK_ALARM_PRIORITY:
+                      lcd.setCursor(3, 2);
+                      lcd.print(F("PEAK PRESSURE"));
+                      lcd.setCursor(7, 3);
+                      if(Alarms.Alarm_type_PEAK == VALUE_HIGH)
+                      {
+                        lcd.print(F("HIGH"));
+                      }
+                      else
+                      {
+                        lcd.print(F("LOW"));
+                      }
+                      break;
+
+                case FIO2_ALARM_PRIORITY:
+                      lcd.setCursor(7, 2);
+                      lcd.print(F("FiO2"));
+                      lcd.setCursor(7, 3);
+                      if(Alarms.Alarm_type_FIO2 == VALUE_HIGH)
+                      {
+                        lcd.print(F("HIGH"));
+                      }
+                      else
+                      {
+                        lcd.print(F("LOW"));
+                      }
+                      break;
+              case TIDAL_VOLUME_ALARM_PRIORITY:
+                      lcd.setCursor(3, 2);
+                      lcd.print(F("TIDAL VOLUME"));
+                      lcd.setCursor(7, 3);
+                      if(Alarms.Alarm_type_TIDAL_VOL == VALUE_HIGH)
+                      {
+                        lcd.print(F("HIGH"));
+                      }
+                      else
+                      {
+                        lcd.print(F("LOW"));
+                      }
+                      break;
+                      
+                case MINUTE_VOLUME_ALARM_PRIORITY:
+                      lcd.setCursor(3, 2);
+                      lcd.print(F("MINUTE VOLUME"));
+                      lcd.setCursor(7, 3);
+                      if(Alarms.Alarm_type_MIN_VOLUME == VALUE_HIGH)
+                      {
+                        lcd.print(F("HIGH"));
+                      }
+                      else
+                      {
+                        lcd.print(F("LOW"));
+                      }
+                      break;
+              case PEEP_ALARM_PRIORITY:
+                      lcd.setCursor(7, 2);
+                      lcd.print(F("PEEP"));
+                      lcd.setCursor(7, 3);
+                      if(Alarms.Alarm_type_PEEP == VALUE_HIGH)
+                      {
+                        lcd.print(F("HIGH"));
+                      }
+                      else
+                      {
+                        lcd.print(F("LOW"));
+                      }
+                      break;         
+              case PLATEAU_PRESSURE_ALARM_PRIORITY:
+                      lcd.setCursor(2, 2);
+                      lcd.print(F("PLATEAU PRESSURE"));
+                      lcd.setCursor(7, 3);
+                      if(Alarms.Alarm_type_PLATEAU == VALUE_HIGH)
+                      {
+                        lcd.print(F("HIGH"));
+                      }
+                      else
+                      {
+                        lcd.print(F("LOW"));
+                      }
+                      break;               
+                      
+            }
+            Alarms.previous_alarm = Alarms.set_alarm;
+      }
+  }  
+  else if(key_int_flag || Alarms.Flag_alarm)
   {
       char displayStr[21]={};
+      static bool init1 = true;
+      static bool init2 = true;
+      static unsigned long timeStamp = 0;
       key_int_flag = false;
       switch(display_screen_state)
       {
-        case 0 :// welcome screen
-          lcd.clear();
-          lcd.setCursor(0, 3);
-          lcd.setCursor(0, 1);
-          lcd.setCursor(0, 2);
-          lcd.setCursor(0, 0);
-          lcd.print("Welcome Screen");
+        case DISPLAY_WELCOME :// welcome screen
+          if (init1) {          
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.setCursor(0, 1);
+            lcd.print(F("Welcome"));
+            lcd.setCursor(0, 2);
+            lcd.print(F("OpenVentPK 1.0"));
+            lcd.setCursor(0, 3);
+            init1 = false;
+            display_screen_state = DISPLAY_CAUTION;
+          }
+          key_int_flag = true;
           break;
+        case DISPLAY_CAUTION:
+          if (init2) {
+            timeStamp = millis();
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print(F("Verify Following!!!!"));
+            lcd.setCursor(0, 1);
+            lcd.print(F("1.FiO2"));
+            lcd.setCursor(0, 2);
+            lcd.print(F("2.PEEP"));
+            lcd.setCursor(0, 3);
+            lcd.print(F("3.Minute Ventilation"));
+            init2 = false;
+          }
+          key_int_flag = true;
+          if ((millis() - timeStamp) >= 5000)
+            display_screen_state = DISPLAY_FIO2;
+        break;
         case DISPLAY_FIO2 :
           Display_menu_1();
           display_screen_Next_state = DISPLAY_SET_FiO2;
@@ -325,31 +489,44 @@ void Display(void)
          case 8:
           break;
          case DISPLAY_SET_FiO2:
-          lcd.clear();
-          lcd.setCursor(0, 0);
-          lcd.print("FiO2");
-          lcd.setCursor(0, 1);
-          lcd.print("Range 50 to 100 %");
-          lcd.setCursor(0, 2);
-          displayStr[20]={};
-          sprintf(displayStr, "Set Value= %u", Param_FiO2);
-          lcd.print(displayStr);
-          lcd.setCursor(0, 3);
-          lcd.print("New Value = ");
-          display_screen_Next_state = DISPLAY_FIO2;
+          if(display_screen_Next_state != DISPLAY_FIO2)
+          {
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print(F("FiO2"));
+            lcd.setCursor(0, 1);
+            lcd.print(F("Range 30 to 100 %"));
+            lcd.setCursor(0, 2);
+            lcd.print(F("Set Value = "));
+            lcd.print(FiO2_Value[Set_Param_FiO2][0]); lcd.print(F("-")); lcd.print(FiO2_Value[Set_Param_FiO2][1]);
+            lcd.setCursor(0, 3);
+            lcd.print(F("New Value = "));
+            lcd.print(FiO2_Value[Set_Param_New_FiO2][0]); lcd.print(F("-")); lcd.print(FiO2_Value[Set_Param_New_FiO2][1]);
+            display_screen_Next_state = DISPLAY_FIO2;
+            Set_Param_New_FiO2 = Set_Param_FiO2;          
+          }
+          else
+          {
+            lcd.setCursor(12, 3);
+            // lcd.print(F("New Value = "));
+            lcd.print(FiO2_Value[Set_Param_New_FiO2][0]); lcd.print(F("-")); lcd.print(FiO2_Value[Set_Param_New_FiO2][1]);lcd.print(F(" "));
+
+          }
           break;
          case DISPLAY_SET_T_V:
           lcd.clear();
           lcd.setCursor(0, 0);
-          lcd.print("Tidal Volume");
+          lcd.print(F("Tidal Volume"));
           lcd.setCursor(0, 1);
-          lcd.print("Range 200 to 800 ml");
+          displayStr[20]={};
+          sprintf(displayStr, "Range %u to %u ml", minVolume, maxVolume);
+          lcd.print(displayStr);
           lcd.setCursor(0, 2);
           displayStr[20]={};
-          sprintf(displayStr, "Set Value = %u", Param_TV);
+          sprintf(displayStr, "Set Value = %u", Set_Param_TV);
           lcd.print(displayStr);
           lcd.setCursor(0, 3);
-          lcd.print("New Value = ");
+          lcd.print(F("New Value = "));
           display_screen_Next_state = DISPLAY_T_V;
           break;         
          case DISPLAY_SET_I_E:
@@ -357,23 +534,23 @@ void Display(void)
           {
             lcd.clear();
             lcd.setCursor(0, 0);
-            lcd.print("I:E Ratio");
+            lcd.print(F("I:E Ratio"));
             lcd.setCursor(0, 1);
-            lcd.print("Range 1:1 to 1:3");
+            lcd.print(F("Range 1:1 to 1:3"));
             lcd.setCursor(0, 2);
-            lcd.print("Set Value = ");
-            lcd.print(IE_R_Value[Param_IE_R][0]); lcd.print(":"); lcd.print(IE_R_Value[Param_IE_R][1]);
+            lcd.print(F("Set Value = "));
+            lcd.print(IE_R_Value[Set_Param_IE_R][0]); lcd.print(F(":")); lcd.print(IE_R_Value[Set_Param_IE_R][1]);
             lcd.setCursor(0, 3);
-            lcd.print("New Value = ");
-            lcd.print(IE_R_Value[Param_New_IE_R][0]); lcd.print(":"); lcd.print(IE_R_Value[Param_New_IE_R][1]);
+            lcd.print(F("New Value = "));
+            lcd.print(IE_R_Value[Set_Param_New_IE_R][0]); lcd.print(F(":")); lcd.print(IE_R_Value[Set_Param_New_IE_R][1]);
             display_screen_Next_state = DISPLAY_I_E;
-            Param_New_IE_R = Param_IE_R;
+            Set_Param_New_IE_R = Set_Param_IE_R;
           }
           else
           {
-            lcd.setCursor(0, 3);
-            lcd.print("New Value = ");
-            lcd.print(IE_R_Value[Param_New_IE_R][0]); lcd.print(":"); lcd.print(IE_R_Value[Param_New_IE_R][1]);
+            lcd.setCursor(12, 3);
+            // lcd.print(F("New Value = "));
+            lcd.print(IE_R_Value[Set_Param_New_IE_R][0]); lcd.print(F(":")); lcd.print(IE_R_Value[Set_Param_New_IE_R][1]);
           }
           break;         
          case DISPLAY_SET_TRIG:
@@ -381,56 +558,59 @@ void Display(void)
           {
             lcd.clear();
             lcd.setCursor(0, 0);
-            lcd.print("Triggering");
+            lcd.print(F("Triggering"));
             lcd.setCursor(0, 1);
-            lcd.print("Range -0.5 to 5 SLPM");
+            lcd.print(F("Range -0.5 to 5 SLPM"));
             lcd.setCursor(0, 2);
-            lcd.print("Set Value = ");
-            lcd.print(Param_TRIG);
+            lcd.print(F("Set Value = "));
+            lcd.print(Set_Param_TRIG);
             lcd.setCursor(0, 3);
-            lcd.print("New Value = ");
-            lcd.print(Param_TRIG);
+            lcd.print(F("New Value = "));
+            lcd.print(Set_Param_TRIG);
             lcd.setCursor(0, 3);
-            lcd.print("New Value = ");
-            lcd.print(Param_TRIG);
-            lcd.print(" ");
+            lcd.print(F("New Value = "));
+            lcd.print(Set_Param_TRIG);
+            lcd.print(F(" "));
             display_screen_Next_state = DISPLAY_TRIG;
-            Param_New_TRIG = Param_TRIG;
+            Set_Param_New_TRIG = Set_Param_TRIG;
           }
           else
           {
-            lcd.setCursor(0, 3);
-            lcd.print("New Value = ");
-            lcd.print(Param_New_TRIG);
-            lcd.print(" ");
+            lcd.setCursor(12, 3);
+            // lcd.print(F("New Value = "));
+            lcd.print(Set_Param_New_TRIG);
+            lcd.print(F(" "));
           }
           break;
          case DISPLAY_SET_RR:
           lcd.clear();
           lcd.setCursor(0, 0);
-          lcd.print("Respiratory Rate");
+          lcd.print(F("Respiratory Rate"));
           lcd.setCursor(0, 1);
-          lcd.print("Range 8 to 35 BPM");
+          lcd.print(F("Range 8 to 35 BPM"));
           lcd.setCursor(0, 2);
           displayStr[20]={};
-          sprintf(displayStr, "Set Value = %u", Param_RR);
+          sprintf(displayStr, "Set Value = %u", Set_Param_RR);
           lcd.print(displayStr);
           lcd.setCursor(0, 3);
-          lcd.print("New Value = ");
+          lcd.print(F("New Value = "));
           display_screen_Next_state = DISPLAY_RR;
           break;
          case DISPLAY_SET_PC:
           lcd.clear();
           lcd.setCursor(0, 0);
-          lcd.print("Pressure Control");
+          lcd.print(F("Pressure Control"));
           lcd.setCursor(0, 1);
-          lcd.print("Range 0 to 40 cm H2O");
+          if (setpoint.reqEnableCPAP_F == 1) 
+            lcd.print(F("Range 5 to 20 cm H2O"));
+          else
+            lcd.print(F("Range 0 to 40 cm H2O"));
           lcd.setCursor(0, 2);
           displayStr[20]={};
-          sprintf(displayStr, "Set Value = %u", Param_PC);
+          sprintf(displayStr, "Set Value = %u", Set_Param_PC);
           lcd.print(displayStr);
           lcd.setCursor(0, 3);
-          lcd.print("New Value = ");
+          lcd.print(F("New Value = "));
           display_screen_Next_state = DISPLAY_PC;
           break;
          case DISPLAY_SET_VMODE:
@@ -438,23 +618,24 @@ void Display(void)
             {
               lcd.clear();
               lcd.setCursor(0, 0);
-              lcd.print("Vent Mode");
+              lcd.print(F("Vent Mode: VCV/PCV"));
               lcd.setCursor(0, 1);
-              lcd.print("VCV PCV AC-VCV/PCV");
+              // lcd.print(F("AC-VCV/PCV | CPAP ");
+              lcd.print(F(" CPAP | AC-VCV/PCV  "));
               lcd.setCursor(0, 2);
-              lcd.print("Set Mode = ");
-              lcd.print(VentMode[Param_vMode]);
+              lcd.print(F("Set Mode = "));
+              lcd.print(VentMode[Set_Param_vMode]);
               lcd.setCursor(0, 3);
-              lcd.print("New Mode = ");
-              lcd.print(VentMode[Param_vMode]);
-              Param_New_vMode = Param_vMode;
+              lcd.print(F("New Mode = "));
+              lcd.print(VentMode[Set_Param_vMode]);
+              Set_Param_New_vMode = Set_Param_vMode;
               display_screen_Next_state = DISPLAY_VMODE;
             }
             else
             {
-              lcd.setCursor(0, 3);
-              lcd.print("New Mode = ");
-              lcd.print(VentMode[Param_New_vMode]);
+              lcd.setCursor(11, 3);
+              // lcd.print(F("New Mode = "));
+              lcd.print(VentMode[Set_Param_New_vMode]);
             }
           break;  
          case DISPLAY_INPUT:
@@ -479,7 +660,8 @@ void KeyPressed()           //ISR function
 {
   if(key_int_flag == false)
   {
-    byte val = (PINA & 0xF0) >> 4; // get PORTA value
+    // byte val = (PINA & 0xF0) >> 4; // get PORTA value
+    byte val = pins_KEYPAD;
     switch(val)
     {
         case KEY_0: key_value = 0;
@@ -527,28 +709,37 @@ void KeyPressed()           //ISR function
           // Change Triggering
           else if( display_screen_Next_state == DISPLAY_TRIG )
           {
-            if( Param_New_TRIG < 5)
+            if( Set_Param_New_TRIG < 5)
             {
-               Param_New_TRIG = Param_New_TRIG + 0.5;
+               Set_Param_New_TRIG = Set_Param_New_TRIG + 0.5;
                display_screen_state = DISPLAY_SET_TRIG; // remove this after - function is made
             }
           }
           // Change I:E Ratio        
           else if (display_screen_Next_state == DISPLAY_I_E)
           {
-            if(Param_New_IE_R < 2)
+            if(Set_Param_New_IE_R < 2)
             {
-              Param_New_IE_R++;
+              Set_Param_New_IE_R++;
               display_screen_state = DISPLAY_SET_I_E;
             }
           }
           // Change Vent mode
           else if (display_screen_Next_state == DISPLAY_VMODE)
           {
-            if(Param_New_vMode < 3)
+            if(Set_Param_New_vMode < 4)
             {
-              Param_New_vMode++;
+              Set_Param_New_vMode++;
               display_screen_state = DISPLAY_SET_VMODE;
+            }
+          }         
+          // Change FiO2
+          else if (display_screen_Next_state == DISPLAY_FIO2)
+          {
+            if(Set_Param_New_FiO2 < 3)
+            {
+              Set_Param_New_FiO2++;
+              display_screen_state = DISPLAY_SET_FiO2;
             }
           }         
           else
@@ -571,28 +762,37 @@ void KeyPressed()           //ISR function
           // Change Triggering Value
           else if( display_screen_Next_state == DISPLAY_TRIG )
           {
-            if( Param_New_TRIG > -0.5)
+            if( Set_Param_New_TRIG > -0.5)
             {
-               Param_New_TRIG = Param_New_TRIG - 0.5;
+               Set_Param_New_TRIG = Set_Param_New_TRIG - 0.5;
                display_screen_state = DISPLAY_SET_TRIG;
             }
           }
           // Change I:E Ratio
           else if (display_screen_Next_state == DISPLAY_I_E)
           {
-            if(Param_New_IE_R > 0)
+            if(Set_Param_New_IE_R > 0)
             {
-              Param_New_IE_R--;
+              Set_Param_New_IE_R--;
               display_screen_state = DISPLAY_SET_I_E;
             }
           }
           // Change Vent mode
           else if (display_screen_Next_state == DISPLAY_VMODE)
           {
-            if(Param_New_vMode > 0)
+            if(Set_Param_New_vMode > 0)
             {
-              Param_New_vMode--; 
+              Set_Param_New_vMode--; 
               display_screen_state = DISPLAY_SET_VMODE;
+            }
+          }
+          // Change FiO2
+          else if (display_screen_Next_state == DISPLAY_FIO2)
+          {
+            if(Set_Param_New_FiO2 > 0)
+            {
+              Set_Param_New_FiO2--;
+              display_screen_state = DISPLAY_SET_FiO2;
             }
           }
           else
@@ -604,7 +804,7 @@ void KeyPressed()           //ISR function
 
         /* char 'x'   clear Input */
         case KEY_C: 
-          if( display_screen_Next_state >= 1 && display_screen_Next_state <= 4)
+          if( display_screen_Next_state >= 2 && display_screen_Next_state <= 4)
           {
             display_screen_state = DISPLAY_CLEAR;
           }
@@ -629,7 +829,7 @@ void KeyPressed()           //ISR function
           
         /*  Discard settings in settings menu  (in simulation key 'on/c') */
         case KEY_STAR:  
-          if( display_screen_Next_state>=1 && display_screen_Next_state <=6)
+          if( display_screen_Next_state>=1 && display_screen_Next_state <=7)
           {
             display_screen_state = display_screen_Next_state;
             new_value= 0;
@@ -645,7 +845,44 @@ void KeyPressed()           //ISR function
 void readSwitches()
 {
   if (digitalRead(pin_Switch_START) == HIGH)
-    activateVentilatorOperation = 1;
+    activateVentilatorOperation = true;
   else
-    activateVentilatorOperation = 0;
+    activateVentilatorOperation = false;
+}
+
+
+void V_Mode_Breakdown()
+{
+  switch (setpoint.reqVentMode)
+  {
+  case VENT_MODE_VCV:
+    setpoint.reqControlVariable = VOL_CONT_MODE;
+    setpoint.reqAssistMode_F = 0;
+    setpoint.reqEnableCPAP_F = 0;
+    break;
+  case VENT_MODE_PCV:
+    setpoint.reqControlVariable = PRESS_CONT_MODE;
+    setpoint.reqAssistMode_F = 0;
+    setpoint.reqEnableCPAP_F = 0;
+    break;
+  case VENT_MODE_AC_VCV:
+    setpoint.reqControlVariable = VOL_CONT_MODE;
+    setpoint.reqAssistMode_F = 1;
+    setpoint.reqEnableCPAP_F = 0;
+    break;
+  case VENT_MODE_AC_PCV:
+    setpoint.reqControlVariable = PRESS_CONT_MODE;
+    setpoint.reqAssistMode_F = 1;
+    setpoint.reqEnableCPAP_F = 0;
+    break;          
+  case VENT_MODE_CPAP:
+    setpoint.reqControlVariable = PRESS_CONT_MODE;
+    setpoint.reqAssistMode_F = 0;
+    setpoint.reqEnableCPAP_F = 1;
+    setpoint.reqPressure = constrain(setpoint.reqPressure, minPressureCPAP, maxPressureCPAP);
+    Set_Param_PC = setpoint.reqPressure;
+    break;
+  default:
+    break;
+  }  
 }

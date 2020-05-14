@@ -24,18 +24,23 @@
   #include "WConstants.h"
 #endif
  
+#define DATA_INVALID 0
+#define DATA_VALID  1
+
 
 class SFM3x00 {
   public:
     //SFM3x00(uint8_t i2cAddress);
 	SFM3x00(int i2cAddress);
     byte init();
-    float getvalue();
+    uint16_t getvalue();
+    uint8_t checkDataValidity();
     
  
   private:
 	//uint8_t mI2cAddress;
 	int mI2cAddress;
+  uint8_t dataValidity;
 	uint8_t crc8(const uint8_t data, uint8_t crc);
 };
     // unsigned long _startTime;

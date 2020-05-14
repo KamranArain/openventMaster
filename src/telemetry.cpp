@@ -1,10 +1,24 @@
 #include "header.h"
+#include "flowSensor.h"
+#include "alarms.h"
 
 #ifdef TX_SERIAL_TELEMETRY
 
 #include "telemetry.h"
 
+extern struct Flow_Sensor FS;
+extern struct P_Sensor p_sensor;
+extern struct STATUS_FLAGS status;
+extern struct setpointStatus setpoint;
+extern struct TidalVolume TV;
+extern struct MONITORING_PARAMS monitoring;
+extern struct ALARMS Alarms;
+
+
 struct TEL_TYPE TEL;
+
+extern uint8_t FiO2_Value[4][2];
+extern uint8_t IE_R_Value[3][2];
 
 void Prepare_Tx_Telemetry()
 {
@@ -82,13 +96,13 @@ void Prepare_Tx_Telemetry()
         uInt |= ((TEL.spIE_Exhale & 0x0F) << 4);
         TEL_BUFF[24] = (uInt & 0x00FF);
 
-        uInt = (unsigned int)(TEL.spFiO2);
+        uInt = (unsigned int)(TEL.spFiO2_LowerBound);
         TEL_BUFF[25] = (uInt & 0x00FF);
 
         uInt = (unsigned int)(TEL.spExpPressure + 30.0);
         TEL_BUFF[26] = (uInt & 0x00FF);
 
-        uInt = (unsigned int)(TEL.statusByteError);
+        uInt = (unsigned int)(TEL.ErrorStatusByte1);
         TEL_BUFF[27] = (uInt & 0x00FF);
 
         uInt = (unsigned int)(TEL.patientWeight);
@@ -122,10 +136,18 @@ void Prepare_Tx_Telemetry()
         uInt = (unsigned int)(TEL.mPeakPressure + 30.0);
         TEL_BUFF[40] = (uInt & 0x00FF);
 
-        TEL_BUFF[41] = 0x00;
-        TEL_BUFF[42] = 0x00;
-        TEL_BUFF[43] = 0x00;
-        TEL_BUFF[44] = 0x00;
+        uInt = (unsigned int)(TEL.ErrorStatusByte2);
+        TEL_BUFF[41] = (uInt & 0x00FF);
+
+        uInt = (unsigned int)(TEL.ErrorStatusByte3);
+        TEL_BUFF[42] = (uInt & 0x00FF);
+
+        uInt = (unsigned int)(TEL.ErrorStatusByte4);
+        TEL_BUFF[43] = (uInt & 0x00FF);
+
+        uInt = (unsigned int)(TEL.spFiO2_UpperBound);
+        TEL_BUFF[44] = (uInt & 0x00FF);
+
         TEL_BUFF[45] = 0x00;
         TEL_BUFF[46] = 0x00;
 
@@ -182,5 +204,75 @@ void Prepare_Tx_Telemetry()
         //Serial.print(F("Tel Tx Rate: ")); Serial.print(TEL.txUpdateRate); Serial.println(F(" Hz"));
         ctr = 0;
     }
+}
+#endif
+
+#ifdef TX_SERIAL_TELEMETRY
+void GetTelData()
+{
+
+  static boolean init = true;
+  byte TEL_BYTE = 0x00;
+  if (init)
+  {
+    TEL.Time = 0;
+    TEL.txUpdateRate = 0;
+    TEL.FDCB = 0xFF;
+    init = false;
+  }
+
+  TEL.Time += (samplePeriod1);
+
+  if ((TEL.Time % 20) == 0)
+  {
+    TEL.mTV = TV.measured; //ml
+    //TEL.mTV = constrain(TEL.mTV, 0.0, 1000.0);
+    TEL.mTVinsp = TV.inspiration; //ml
+    TEL.mTVexp = TV.expiration; //ml
+    TEL.mPressure = p_sensor.pressure_gauge_CM; //cmH2O
+    TEL.mFlowRate = FS.Q_SLM; //SLPM
+    TEL.mPEEP = monitoring.PEEPressure;
+    TEL.mPltPress = monitoring.plateauPressure;
+    TEL.mFiO2 = 21.0;
+    TEL.minuteVentilation = TV.minuteVentilation;
+    TEL.mPeakPressure = monitoring.peakInspPressure;
+    TEL.mRR = monitoring.measuredRR;
+    TEL.staticCompliance = TV.staticCompliance;
+    TEL.spTrigger = setpoint.flowTriggerSenstivity;
+
+    TEL.spTV = setpoint.reqVolume;
+    TEL.spInsPressure = setpoint.reqPressure;
+    TEL.spExpPressure = 5; //0;
+
+    TEL.spFiO2_LowerBound = FiO2_Value[setpoint.reqFiO2][0];
+    TEL.spFiO2_UpperBound = FiO2_Value[setpoint.reqFiO2][1];
+    TEL.spBPM = setpoint.reqBPM;
+    TEL.spIE_Inhale = IE_R_Value[setpoint.reqI_E_Section][0];
+    TEL.spIE_Exhale = IE_R_Value[setpoint.reqI_E_Section][1];
+    TEL.patientWeight = setpoint.patientWeight;
+
+    TEL.ErrorStatusByte1 = Alarms.Error_status_byte_1;
+    TEL.ErrorStatusByte2 = Alarms.Error_status_byte_2;
+    if (status.systemReset)
+      TEL.ErrorStatusByte2 |= 0x40;
+    TEL.ErrorStatusByte3 = Alarms.Error_status_byte_3;
+    TEL.ErrorStatusByte4 = Alarms.Error_status_byte_4;
+
+    TEL_BYTE = 0x00;
+    TEL_BYTE |= status.breathPhase & 0x03;
+    TEL_BYTE |= ((setpoint.reqVentMode & 0x07) << 2);
+    if (status.VentilatorOperationON == 1)  TEL_BYTE |= 0x20;
+    if (status.selfTestProg == ST_IN_PROG)
+      TEL_BYTE |= 0x40;
+    else if ((status.selfTestProg == ST_COMPLETE) && (status.selfTestStatus == ST_FAIL))
+      TEL_BYTE |= 0x80;
+    else if ((status.selfTestProg == ST_COMPLETE) && (status.selfTestStatus == ST_PASS))
+      TEL_BYTE |= 0xC0;
+    else //NOT INIT
+      TEL_BYTE &= 0x3F; //Clear D6 and D7
+
+    TEL.statusByte1 = TEL_BYTE;
+    TEL.FDCB = 0xCC;
+  }
 }
 #endif

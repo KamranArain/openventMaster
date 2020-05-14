@@ -22,13 +22,15 @@
 
 
 #define minBPM 8             // minimum respiratory speed
-#define defaultBPM 12        // default respiratory speed
+#define defaultBPM 16        // default respiratory speed
 #define maxBPM 35             // maximum respiratory speed
 #define minVolume 200         // minimum respiratory volume in milliliters
-#define defaultVolume 600     // default respiratory volume in milliliters
-#define maxVolume 800         // maximum respiratory volume in milliliters
+#define defaultVolume 500     // default respiratory volume in milliliters
+#define maxVolume 500         // maximum respiratory volume in milliliters
 #define minPressure 0        // minimum compression for the ambu-bag in cmH2O
+#define minPressureCPAP 5        // minimum compression for the ambu-bag in cmH2O
 #define defaultPressure 15 // default compression for the ambu-bag in cmH2O
+#define maxPressureCPAP 20     // maximum compression for the ambu-bag in cmH2O //approx 40cH20
 #define maxPressure 40     // maximum compression for the ambu-bag in cmH2O //approx 40cH20
 #define minWeight 2          // minimum compression for the ambu-bag in Pa
 #define maxWeight 150        // minimum compression for the ambu-bag in Pa
@@ -58,9 +60,6 @@
    
 //******************************   IMPIED DEFINITIONS  ********************************
 #ifdef ActiveBeeper
-#define Beeper
-#endif
-#ifdef PassiveBeeper
 #define Beeper
 #endif
 
@@ -121,13 +120,22 @@
 #define ST_COMPLETE 2
 #define ST_FAIL 0
 #define ST_PASS 1
-#define WARM_UP_TIME 2 * 1000
+#define WARM_UP_TIME 5 * 1000
+
+#define HEALTH_BAD 0
+#define HEALTH_GOOD 1
 
 #define DC_MOTOR_IN_USE 1
 #define STEPPER_IN_USE 0
 
 #define VOL_CONT_MODE 0
 #define PRESS_CONT_MODE 1
+
+#define VENT_MODE_VCV       0
+#define VENT_MODE_PCV       1
+#define VENT_MODE_AC_VCV    2
+#define VENT_MODE_AC_PCV    3
+#define VENT_MODE_CPAP      4
 
 /**********Pressure sensors parameters*************/
 #define BMP180_IN_USE 1
@@ -154,21 +162,17 @@
 
 //#define MPX_IN A4
 
-#ifdef ActiveBeeper
-#define pin_Beep 37 //Any Pin
-#endif
-#ifdef PassiveBeeper
-#define pin_Beep 37 //PWM Pin
-#endif
-
 #ifdef Led
 #define pin_LED1 22
 #endif
 
-#define pin_Button_OK 42
-#define pin_Button_SNZ 43
+// #define pin_Button_OK 42
 #define pin_Switch_START 44
-#define pin_Switch_MODE 45
+// #define pin_Switch_MODE 45
+#define pin_SNOOZBTN         43
+#define pin_BUZZER           37
+#define pins_KEYPAD ((PINA & 0xF0) >> 4)
+#define pin_KEYPAD_INTERRUPT 2
 
 #define pin_Knob_1 A12 //VR1 // I/E Ratio
 #define pin_Knob_2 A13 //VR2 // BPM
@@ -180,19 +184,7 @@
 #define pin_LmtSWT_CL1 48
 #define pin_LmtSWT_CL2 49
 
-#ifdef stepDirMotor
-
-//Instructions for using moveTo function of Accel Stepper Class
-// moveTo() also recalculates the speed for the next step.
-// If you are trying to use constant speed movements, you should call setSpeed() after calling moveTo().
-
-#define FULL_STEP 0 //For Use with Port Registers: Not Yet Implemented
-#define HALF_STEP 1
-#define QUARTER_STEP 2
-#define EIGHTH_STEP 3
-#define SIXTEENTH_STEP 7
-
-#endif
+#define pin_SLAVE_RESET 3
 
 #define pin_M1_POT A11 //VR5
 
@@ -235,11 +227,9 @@
 #endif
 
 
-#ifdef StepGen
 #include "TimerOne.h" // Timer component
 //  By Jesse Tane, Jérôme Despatis, Michael Polli, Dan Clemens, Paul Stroffregen
 //  https://playground.arduino.cc/Code/Timer1/
-#endif
 
 #include "TimerThree.h" // Timer3 component
 
@@ -250,8 +240,7 @@ void selfTest();
 void calibrate(int calibParam);
 void readSensors();
 void Monitoring();
-void alarmControl();
-void devModeFunc();
+void alarmControlOld();
 void Ventilator_Control();
 
 #ifdef Beeper
@@ -268,6 +257,8 @@ void eeget();
 
 void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String dir="0");
 void decodeSlaveTel();
+void receiveSlaveTel();
+void checkSensorHealth();
 //***************************************   END   ***************************************
 
 struct P_Sensor
@@ -279,15 +270,22 @@ struct P_Sensor
       q = 0;                   //flow rate in lit/min
   float pressure_gauge = 0;    // Pressure from the sensor in Pa
   float pressure_gauge_CM = 0; // Pressure from the sensor in cmH2O
+  uint8_t connectionStatus = 255;
+  uint8_t sensorHealth = HEALTH_BAD;
 };
 
 struct setpointStatus
 {
   uint8_t curI_E; //I/E Ratio
+  uint8_t curI_E_Section; //I/E Ratio
   uint8_t curBPM;         // BPM
   uint16_t curVolume;          //Tidal Volume Setpoint
   uint8_t curPressure;          //Insp pressure limit
   uint8_t curFiO2;          //Oxygen Concentration
+  uint8_t curVentMode = VENT_MODE_VCV;
+  uint8_t curControlVariable = VOL_CONT_MODE;
+  bool curAssistMode_F = 0;
+  bool curEnableCPAP_F = 0;
   
   uint8_t reqI_E_Section; //I/E Ratio
   uint8_t reqBPM;         // BPM
@@ -295,9 +293,15 @@ struct setpointStatus
   uint8_t reqPressure;          //Insp pressure limit
   uint8_t reqFiO2;          //Oxygen Concentration
   float flowTriggerSenstivity; //Lpm trigger for Assist mode
+  uint8_t reqVentMode = VENT_MODE_VCV;
+  uint8_t reqControlVariable = VOL_CONT_MODE;
+  bool reqAssistMode_F = 0;
+  bool reqEnableCPAP_F = 0;
+
+  uint8_t patientWeight = 70; //kg
 };
 
-struct Alarm
+struct Buzzer
 {
   unsigned int action = SNOOZE_ALARM;
   unsigned int toneFreq = SNOOZE_ALARM;
@@ -311,7 +315,49 @@ struct TidalVolume
   float expiration = 0.0;
   float minuteVentilation = 0.0;
   float staticCompliance = 0.0; // (ml / cmH2O)
+  float maxInhale = 0.0;
 
+};
+
+struct STATUS_FLAGS
+{
+  bool hours96_complete = false;
+  bool battInUse = false;
+  bool homingFailure = false;
+  bool circuitIntegrityFailure = false;
+  bool mechIntergrityFaiure = false;
+  bool oxygenFailure = false;
+  bool ventCktDisconnected = false;
+  bool flowSensorFailure = false;
+  bool presSensorFailure = false;
+  bool o2SensorFailure = false;
+  bool systemReset = true;
+
+  bool PeepValid = false;
+  bool PltPrsValid = false;
+  bool  homeAtBadSensor = false;
+  bool  homeAtBadFlowSensor = false;
+  bool  homeAtBadPressSensor = false;
+  bool WarmUpFlag = true;
+
+  uint8_t breathPhase = WAIT_PHASE;
+  uint8_t VentilatorOperationON = 0;
+  uint8_t selfTestProg = ST_NOT_INIT; // Selft Test is Implemented
+  uint8_t selfTestStatus = ST_PASS;   // Selft Test is Implemented
+  uint8_t sensorsHealth = HEALTH_BAD;
+  uint8_t Homing_Done_F = 0;
+
+
+
+};
+
+struct MONITORING_PARAMS
+{
+float plateauPressure, /* Plateau pressure is the pressure that is applied by the ventilator to the small airways and alveoli.
+                           It is measured at end-inspiration with an inspiratory hold maneuver.*/
+      PEEPressure,       // Positive end-expiratory pressure (PEEP)
+      peakInspPressure;      // high pass filtered value of the pressure. Used to detect patient initiated breathing cycles
+uint8_t measuredRR = 0;
 };
 
 struct Slave

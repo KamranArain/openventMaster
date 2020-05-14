@@ -1,15 +1,12 @@
 /*
  * All the #define are in Plateformio.ini file with -D name 
-  OpenVentPK Prototype 1 OVPD-1 - Source Code
+   OpenVentPK Prototype 1 OVPD-1 - Source Code
     //TODO:
         ADD Version History Here
         In Future;
         Implement Watchdog
         Address Wire.h long reported bug
-        Implement Assist Control
-        Implement Pressure Controlled Mode
         Interface O2 Sensor
-        Interface Flow Rate Sensor
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -32,88 +29,62 @@
 #include "flowSensor.h"
 #include "control.h"
 #include "userInterface.h"
+#include "command.h"
+#include "alarms.h"
+#ifdef EN_WATCHDOG
+  #include <avr/wdt.h>
+#endif
+
 
 //Other Address could be 0x20, 0x27 , 0x3F
 // Run I2C_Scanner Script to discover device
 
 #ifdef TX_SERIAL_TELEMETRY
 #include "telemetry.h"
-extern struct TEL_TYPE TEL;
 #endif
- 
-float plateauPressure, /* Plateau pressure is the pressure that is applied by the ventilator to the small airways and alveoli.
-                           It is measured at end-inspiration with an inspiratory hold maneuver.*/
-      PEEPressure,       // Positive end-expiratory pressure (PEEP)
-      peakInspPressure;      // high pass filtered value of the pressure. Used to detect patient initiated breathing cycles
-unsigned long tick1,            // counter used to trigger sensor measurements //loop 1
-         tick2;             // counter used to trigger sensor measurements // loop 2
-uint16_t breathLength;      // duration of the current breathing cycle in milliseconds. This is 60000/BPM.
-         
-boolean PeepValid = false;
-boolean PltPrsValid = false;
-
-//double CodeVer;
-// Parameters saved to / recovered from EEPROM
-
-uint8_t breathPhase = WAIT_PHASE;
-uint8_t selfTestProg = ST_NOT_INIT; // Selft Test is Implemented
-uint8_t selfTestStatus = ST_PASS;   // Selft Test is Implemented
-
-byte calibrationParam;
-extern byte calibStatus;
-extern byte estimateVolume;
-
-uint8_t Homing_Done_F = 0;
-
-uint8_t ErrorNumber = 0;
-uint8_t devMode = 0;
-uint8_t activateVentilatorOperation = 0;
-
-uint8_t WarmUpFlag = 1;
-uint8_t DevModeDetectionInProg = 0;
-uint8_t PEEPMesaureFlag = 0;
-
-uint8_t CVmode = VOL_CONT_MODE;// CV or CP mode indicator;
-uint8_t assistControl = 0;
-boolean scanBreathingAttempt = false;
-boolean patientTriggeredBreath = false;
-boolean holdManeuver = true;
-uint16_t holdDur_ms = 150;
-//int triggerVariable = FLOW_VAR;
-//int cyclingVariable = TIME_VAR;
-
-uint8_t VentilatorOperationON = 0;
-
-uint8_t OkButton = 0;
-uint8_t SnoozeButton = 0;
-
-uint8_t pressSnsrInUse = MS4525_IN_USE;
-
-//#ifdef StepGen
-uint8_t motorInUse = STEPPER_IN_USE;
-//#endif
-
-uint8_t patientWeight = 70; //kg
-
-extern uint8_t IE_R_Value[3][2];
 
 extern double VolCoeffs[ORDER+1];
 extern double PressCoeffs[ORDER_PRESS_EQ+1];
 
+extern uint8_t IE_R_Value[3][2];
+extern uint8_t FiO2_Value[4][2];
+
+extern byte calibStatus;
+extern byte estimateVolume;
+extern byte calibrationParam;
+
+bool activateVentilatorOperation = false; 
+bool activateVentilatorControlSerial = false;
+bool plotterData = true;
+
+bool PEEPMesaureFlag = false;
+bool scanBreathingAttempt = false;
+bool patientTriggeredBreath = false;
+bool holdManeuver = true;
+uint16_t holdDur_ms = 150;
+uint32_t actualBreathCycleTime = 0;
+//int triggerVariable = FLOW_VAR;
+//int cyclingVariable = TIME_VAR;
+
+
+#ifdef TX_SERIAL_TELEMETRY
+extern struct TEL_TYPE TEL;
+#endif
 extern struct Flow_Sensor FS;
+extern struct ALARMS Alarms;
 
 struct setpointStatus setpoint;
 struct P_Sensor p_sensor;
 struct TidalVolume TV;
 struct Slave slave;
-
+struct STATUS_FLAGS status;
+struct MONITORING_PARAMS monitoring;
+#ifdef Beeper
+struct Buzzer buzzer;
+#endif
 Control *control;
 
-#ifdef Beeper
-struct Alarm alarm;
-#endif
 
-void (*resetFunction)(void) = 0; // Self reset (to be used with watchdog)
 
 boolean checkValues()
 {
@@ -124,24 +95,22 @@ boolean checkValues()
   if (setpoint.reqVolume > maxVolume) isOk = false;
   if (setpoint.reqPressure < minPressure) isOk = false;  // Compression in allowed range ?
   if (setpoint.reqPressure > maxPressure) isOk = false;
-  if (setpoint.reqFiO2 < 50) isOk = false;  // 
-  if (setpoint.reqFiO2 > 100) isOk = false;
+  if (setpoint.reqFiO2 < 0) isOk = false;  // 
+  if (setpoint.reqFiO2 > 3) isOk = false;
   if (setpoint.reqI_E_Section < 0) isOk = false;  // 
   if (setpoint.reqI_E_Section > 2) isOk = false;
   if (setpoint.flowTriggerSenstivity < (-0.5f)) isOk = false;  // 
   if (setpoint.flowTriggerSenstivity > 5.0f) isOk = false;
-  if (CVmode < 0) isOk = false;  // 
-  if (CVmode > 1) isOk = false;
-  if (assistControl < 0) isOk = false;  // 
-  if (assistControl > 1) isOk = false;
+  if (setpoint.reqVentMode < 0) isOk = false;  // 
+  if (setpoint.reqVentMode > 4) isOk = false;
   if (isnan(setpoint.reqBPM)) isOk = false;                    // Check for malformed floating point values (NaN)
   if (isnan(setpoint.reqVolume)) isOk = false;
   if (isnan(setpoint.reqPressure)) isOk = false;
   if (isnan(setpoint.reqFiO2)) isOk = false;
   if (isnan(setpoint.reqI_E_Section)) isOk = false;
   if (isnan(setpoint.flowTriggerSenstivity)) isOk = false;
-  if (isnan(CVmode)) isOk = false;
-  if (isnan(assistControl)) isOk = false;
+  if (isnan(setpoint.reqVentMode)) isOk = false;
+
 
   return isOk;
 }
@@ -153,29 +122,27 @@ void beep() // Launch a beep
   static unsigned int currentToneFreq = SNOOZE_ALARM;
   static unsigned long t_millis = 0;
 
-#ifdef ActiveBeeper
-  if (alarm.action == SNOOZE_ALARM)
+  if (buzzer.action == SNOOZE_ALARM)
   {
-    noTone(pin_Beep);
+    noTone(pin_BUZZER);
     currentToneFreq = SNOOZE_ALARM;
-    alarm.toneFreq = SNOOZE_ALARM;
-    alarm.timePeriod = SNOOZE_ALARM;
+    buzzer.toneFreq = SNOOZE_ALARM;
+    buzzer.timePeriod = SNOOZE_ALARM;
   }
   else
   {
-    if (alarm.toneFreq > currentToneFreq)
+    if (buzzer.toneFreq > currentToneFreq)
     {
-      currentToneFreq = alarm.toneFreq; //High Severity Alarm Has priority
+      currentToneFreq = buzzer.toneFreq; //High Severity Alarm Has priority
       t_millis = 0;
     }
 
-    if ((millis() - t_millis) >= alarm.timePeriod)
+    if ((millis() - t_millis) >= buzzer.timePeriod)
     {
       t_millis = millis();
-      tone(pin_Beep, currentToneFreq, (int)(alarm.timePeriod / 2)); //Duration in milliseconds
+      tone(pin_BUZZER, currentToneFreq, (int)(buzzer.timePeriod / 2)); //Duration in milliseconds
     }    
   }
-#endif
 }
 #endif
 
@@ -188,9 +155,13 @@ void eeput() // records to EEPROM (only if values are validated)
  // if (n == 1) isOk = true; // override (for debug testing)
   if (isOk)
   {
-    EEPROM.put(eeAddress, CVmode);
-    eeAddress += sizeof(uint8_t);
-    EEPROM.put(eeAddress, assistControl);
+    // EEPROM.put(eeAddress, setpoint.reqControlVariable);
+    // eeAddress += sizeof(uint8_t);
+    // EEPROM.put(eeAddress, setpoint.reqAssistMode_F);
+    // eeAddress += sizeof(uint8_t);
+    // EEPROM.put(eeAddress, setpoint.reqEnableCPAP_F);
+    // eeAddress += sizeof(uint8_t);
+    EEPROM.put(eeAddress, setpoint.reqVentMode);
     eeAddress += sizeof(uint8_t);
     EEPROM.put(eeAddress, setpoint.reqBPM);
     eeAddress += sizeof(uint8_t);
@@ -207,7 +178,7 @@ void eeput() // records to EEPROM (only if values are validated)
     
   }
   else {
-        Serial.println(F("Unsuccessul savinf in EEPROM"));
+        Serial.println(F("Unsuccessul saving in EEPROM"));
 
   }
 #endif
@@ -217,9 +188,7 @@ void eeget()
 {
 #ifdef E2PROM
   int eeAddress = eeStart;
-  EEPROM.get(eeAddress, CVmode);
-  eeAddress += sizeof(uint8_t);
-  EEPROM.get(eeAddress, assistControl);
+  EEPROM.get(eeAddress, setpoint.reqVentMode);
   eeAddress += sizeof(uint8_t);
   EEPROM.get(eeAddress, setpoint.reqBPM);
   eeAddress += sizeof(uint8_t);
@@ -247,26 +216,30 @@ void eeget()
   //       Serial.print('\t');
   // }
   // Serial.println();
-  Serial.println(F("Loaded from EEPROM."));
   boolean isOK = checkValues();
-  if (!isOK)
-  {
+  if (isOK) {
+    V_Mode_Breakdown();
+    Serial.println(F("Settings Loaded from EEPROM."));
+  }
+  else {
     setpoint.reqBPM = defaultBPM;
     setpoint.reqVolume = defaultVolume;
     setpoint.reqPressure = defaultPressure;
     setpoint.reqI_E_Section = defaultExpirationRatioIndex;
-    setpoint.reqFiO2        = 60;
+    setpoint.reqFiO2        = 1;
     setpoint.flowTriggerSenstivity = 0.5;
-    CVmode = VOL_CONT_MODE;
-    assistControl = 0;
+    setpoint.reqVentMode = VENT_MODE_VCV;
+    V_Mode_Breakdown();
     Serial.print(F("Read Default Settings\n")); 
   }
-  Serial.print(F("CVmode: ")); Serial.println(CVmode);
-  Serial.print(F("assistControl: ")); Serial.println(assistControl);
+  Serial.print(F("Vent Mode: ")); Serial.println(setpoint.reqVentMode);
+  Serial.print(F("CPAPmode: ")); Serial.println(setpoint.reqEnableCPAP_F);
+  Serial.print(F("Control Variable: ")); Serial.println(setpoint.reqControlVariable);
+  Serial.print(F("Assist Mode Enabled: ")); Serial.println(setpoint.reqAssistMode_F);
   Serial.print(F("req BPM: ")); Serial.println(setpoint.reqBPM);
   Serial.print(F("req Volume: ")); Serial.println(setpoint.reqVolume);
   Serial.print(F("req Pressure: ")); Serial.println(setpoint.reqPressure);
-  Serial.print(F("req FiO2: ")); Serial.println(setpoint.reqFiO2);
+  Serial.print(F("req FiO2: ")); Serial.print(FiO2_Value[setpoint.reqFiO2][0]);Serial.print(F("-")); Serial.println(FiO2_Value[setpoint.reqFiO2][1]);
   Serial.print(F("req flow Trigger: ")); Serial.println(setpoint.flowTriggerSenstivity);
   Serial.print(F("req IE Ratio: ")); Serial.print(IE_R_Value[setpoint.reqI_E_Section][0]);Serial.print(F(":")); Serial.println(IE_R_Value[setpoint.reqI_E_Section][1]);
 #else
@@ -274,9 +247,11 @@ void eeget()
   setpoint.reqVolume = defaultVolume;
   setpoint.reqPressure = defaultPressure;
   setpoint.reqI_E_Section = defaultExpirationRatioIndex;
-  setpoint.reqFiO2        = 60;
+  setpoint.reqFiO2        = 1;
   setpoint.flowTriggerSenstivity = 0.5;
-  Serial.print("Read Default Settings\n"); 
+  setpoint.reqVentMode = VENT_MODE_VCV;
+  V_Mode_Breakdown();
+  Serial.print(F("Read Default Settings\n")); 
 #endif
 }
 
@@ -288,52 +263,92 @@ void Timer1ISR()
 void selfTest()
 {
   static uint8_t ctr = 0;
-  ErrorNumber = 0;
-  selfTestStatus = ST_PASS;
-  selfTestProg   = ST_IN_PROG;
+  static unsigned long timeElapsedCtr = 0; //multiple of loop time
+  status.selfTestStatus = ST_PASS;
+  status.selfTestProg   = ST_IN_PROG;
+
+  timeElapsedCtr++;
+  if (timeElapsedCtr > 400) //4 seconds
+  {
+    if (status.Homing_Done_F == 3)
+      status.mechIntergrityFaiure = true;
+    else
+      status.mechIntergrityFaiure = false;
+
+    if (status.Homing_Done_F != 2)
+      status.homingFailure = true;
+    else
+      status.homingFailure = false; 
+  }
+  
+  if (calibStatus != ST_IN_PROG)
+  {
+      // slave.stopAck = 2;
+      // if (slave.stopAck == 0)
+      // {
+      //   txSlaveCMD(STOP);
+      //   slave.lastCMD_ID = STOP;
+      //   return;
+      // }
+      // else if (slave.stopAck == 2) {
+
+      status.Homing_Done_F = slave.homeAck;
+
+      if (status.Homing_Done_F != 2)
+      {    
+        if (ctr == 0) { 
+          //Serial2.print("#HOME 2000"); //2000us
+          txSlaveCMD(HOME, 2000);
+          slave.lastCMD_ID = HOME; }
+        else {ctr++; if (ctr == (1000/samplePeriod1)) ctr = 0;}        
+
+        status.selfTestStatus  = ST_FAIL;
+        return;
+      }
+      else if (status.Homing_Done_F == 2)
+      {
+        status.homingFailure = false;//HOMING COMPLETE and SUCCESSFUL
+      }
+    // }
+    // else
+    // {
+    //   Serial.println("Waiting for Motor Stop.");
+    //   return;
+    // }  
+  }
 
   if (FS.connectionStatus != 0)
   {
-    ErrorNumber = FLOW_SENSOR_DISCONNECTED;
+    #if defined(SFM3200AW)
+    initFlowSensor();
+    #endif
     #ifndef TEL_AT_UART0
     Serial.print(F("Flow Sensor Error Code: ")); Serial.println(FS.connectionStatus);  
     #endif
+
+    status.flowSensorFailure = true;
     return;
+  }
+  else
+  {
+    status.flowSensorFailure = false;
+  }
+  
+
+  if (p_sensor.sensorHealth == HEALTH_BAD)
+  {
+    #ifndef TEL_AT_UART0
+    Serial.print(F("Pressure Sensor Error Code: ")); Serial.println(p_sensor.connectionStatus);
+    #endif
+    status.presSensorFailure = true;
+    return;
+  }
+  else
+  {
+    status.presSensorFailure = false;
   }
 
-if (calibStatus != ST_IN_PROG)
-{
-  Homing_Done_F = slave.homeAck;
 
-  if (Homing_Done_F == 0)
-  {    
-    if (ctr == 0) { 
-      //Serial2.print("#HOME 2000"); //2000us
-      txSlaveCMD(HOME, 2000);
-      slave.lastCMD_ID = HOME; }
-    else {ctr++; if (ctr == (1000/samplePeriod1)) ctr = 0;}        
-
-    ErrorNumber     = HOMING_NOT_DONE_ERROR;
-    selfTestStatus  = ST_FAIL;
-    return;
-  }
-  else if (Homing_Done_F == 1)
-  {
-    ErrorNumber     = HOMING_NOT_DONE_ERROR;
-    selfTestStatus  = ST_FAIL;
-    return;
-  }
-  else if (Homing_Done_F == 2)
-  {
-    //HOMING COMPLETE and SUCCESSFUL
-  }
-  else if (Homing_Done_F == 3)
-  {
-    ErrorNumber     = MECH_INTEGRITY_FAILED;
-    selfTestStatus  = ST_FAIL;
-    return;
-  }
-}
   if (calibStatus != ST_COMPLETE)
   {
     calibStatus = ST_IN_PROG;
@@ -341,111 +356,8 @@ if (calibStatus != ST_IN_PROG)
     return;
   }
   
-/*  if (activateVentilatorOperation == 1)
-  {
-    //    Serial.println("Self Test FAIL");
-
-    ErrorNumber     = START_SWT_ERROR;
-    selfTestStatus  = ST_FAIL;
-//    selfTestProg    = ST_COMPLETE;
-    return;
-  }
-  else
-  {
-    //    Serial.println("Self Test PASS");
-    selfTestProg    = ST_COMPLETE;
-    return;
-  }*/
-selfTestProg    = ST_COMPLETE;
-return;
-}
-#ifdef MS4525DO
-/*
-   used to get values from MS4525 sensor
-   and should be called after 10ms
-   due to sensor update or refresh rate
-*/
-
-inline static void get_sensor_data(uint16_t *raw) {
-  Wire.beginTransmission(I2C_ADDRESS_MS4525DO);
-  Wire.write(1);
-  Wire.endTransmission();
-  Wire.requestFrom(I2C_ADDRESS_MS4525DO, 2); //request for two pressure bytes from sensor
-  *raw = (Wire.read() & 0x3F) << 8; // read the msb from the I2C device
-  *raw |= Wire.read();//read the lsb from the device
-}
-#endif
-
-float readVcc() {
-  long result; // Read 1.1V reference against AVcc
-  ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
-  delay(2); // Wait for Vref to settle
-  ADCSRA |= _BV(ADSC); // Convert while (bit_is_set(ADCSRA,ADSC));
-  result = ADCL; result |= ADCH << 8;
-  result = 1126400L / result; // Ba,,ck-calculate AVcc in mV
-  return result;
-}
-
-
-void voltage_correction(float &diff_press_pa)
-{
-  const float slope = 65.0f;
-  /*
-    apply a piecewise linear correction, flattening at 0.5V from 5V
-  */
-  float voltage_diff = readVcc() - 5.0f;
-  if (voltage_diff > 0.5f) {
-    voltage_diff = 0.5f;
-  }
-
-  if (voltage_diff < -0.5f) {
-    voltage_diff = -0.5f;
-  }
-  diff_press_pa -= voltage_diff * slope;
-}
-
-void readSensors() // Read Values from Installed Sensor
-{
-#if defined (MS4525DO)
-  // Calculate differential pressure. As its centered around 8000
-  // and can go positive or negative
-  uint16_t raw_pressure = 0;
-  get_sensor_data(&raw_pressure);
-
-  /*this equation is an inversion of the equation in the
-    pressure transfer function figure on page 4 of the datasheet
-    We negate the result so that positive differential pressures
-    are generated when the bottom port is used as the static
-    port on the pitot and top port is used as the dynamic port*/
-  p_sensor.diff_press_PSI = -((raw_pressure - 0.1f * 16383) * (P_max - P_min) / (0.8f * 16383) + P_min);
-  p_sensor.diff_press_pa = p_sensor.diff_press_PSI * PSI_to_Pa;
-
-  voltage_correction(p_sensor.diff_press_pa); //Recommended by Hamza
-#ifdef MS4525_AS_Gauge_Pressure
-  p_sensor.pressure_gauge = p_sensor.diff_press_pa;
-
-  static float oldY = 0.0;
-  static float avgP = 0.8;
-  float y = p_sensor.pressure_gauge * Pa2cmH2O;
-  y = (y * avgP) + ( oldY * (1.0 - avgP));
-  oldY = y;
-  p_sensor.pressure_gauge_CM = oldY;
-
-  //  p_sensor.pressure_gauge_CM = p_sensor.pressure_gauge * Pa2cmH2O; //Unfiltered
-
-#else
-  float diff_press_bar = (p_sensor.diff_press_PSI * 0.0689476);
-  //liter/min flow rate 60000 where is K is 520 constant
-  p_sensor.q = ( K * diff_press_Bar ) * 60000;
-#endif
-#endif
- 
-  //FLOW SENSORS
-  #if defined(FLOW_SENSOR_INSTALLED)
-  FS.Q_SLM = getFlowValue();
-  #endif
-
-
+  status.selfTestProg    = ST_COMPLETE;
+  return;
 }
 
 void Monitoring()
@@ -463,7 +375,7 @@ void Monitoring()
   if ((millis() - pre_millis_1min) >= 60000)
   {
     pre_millis_1min = millis();
-    TV.minuteVentilation = minuteVentilationSum;
+    TV.minuteVentilation = minuteVentilationSum / 1000.0f;
     minuteVentilationSum = 0.0;
   }
 
@@ -480,22 +392,25 @@ void Monitoring()
   else
   {
   // Plateau Pressure & PEEP and Set Breathing Flags
-    switch (breathPhase)
+    switch (status.breathPhase)
     {
       case INSPIRATION_PHASE:
         if (initInsp) {
+          minuteVentilationSum += TV.inspiration;
           TV.inspiration = 0.0; TV.measured = 0.0;
-          peakInspPressure = p_sensor.pressure_gauge_CM;
+          TV.maxInhale = 0.0;
+          monitoring.peakInspPressure = p_sensor.pressure_gauge_CM;
           initInsp = false;
         }
+        
         TV.inspiration += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
-        TV.measured = TV.inspiration;   
+        TV.measured = TV.inspiration;
+        if (TV.measured > TV.maxInhale)  
+        TV.maxInhale = TV.measured; 
 
-        minuteVentilationSum += TV.inspiration;
 
-        if (peakInspPressure < p_sensor.pressure_gauge_CM)
-          peakInspPressure = p_sensor.pressure_gauge_CM;
-
+        if (monitoring.peakInspPressure < p_sensor.pressure_gauge_CM)
+          monitoring.peakInspPressure = p_sensor.pressure_gauge_CM;
 
         // reset init Flags
         initHold = true;
@@ -504,21 +419,25 @@ void Monitoring()
         scanBreathingAttempt = false;
         patientTriggeredBreath = false;
       break;
+
       case HOLD_PHASE:
         TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
+        if (TV.measured > TV.maxInhale)  
+        TV.maxInhale = TV.measured; 
 
-        PltPrsValid = true;
+
+        status.PltPrsValid = true;
         if (initHold)
         {
-          plateauPressure = (p_sensor.pressure_gauge_CM);
+          monitoring.plateauPressure = (p_sensor.pressure_gauge_CM);
           initHold = false;
         }
         else
         {
-          plateauPressure = (plateauPressure + (p_sensor.pressure_gauge_CM)) * 0.5;
+          monitoring.plateauPressure = (monitoring.plateauPressure + (p_sensor.pressure_gauge_CM)) * 0.5;
         }
       
-        TV.staticCompliance = (TV.inspiration / (plateauPressure - PEEPressure));
+        TV.staticCompliance = (TV.inspiration / (monitoring.plateauPressure - monitoring.PEEPressure));
 
         // reset init Flags
         initInsp = true;
@@ -531,27 +450,29 @@ void Monitoring()
         if (initExp) {TV.expiration = 0.0; initExp = false;}
         TV.expiration += (-1.0) * (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);      
         TV.measured += (((FS.Q_SLM * 1000.0f) / 60000.0f) * delta_t);
+        if (TV.measured > TV.maxInhale)  
+        TV.maxInhale = TV.measured; 
 
-        if (assistControl == 1) {
+        if (setpoint.curAssistMode_F == 1) {
           if (scanBreathingAttempt)
           {
             if (FS.Q_SLM >= setpoint.flowTriggerSenstivity) {
             patientTriggeredBreath = true; }          
           }
         }
-        if (PEEPMesaureFlag == 1)
+        if (PEEPMesaureFlag)
         {
-          PeepValid = true;
+          status.PeepValid = true;
           if (initMeasurePEEP)
           {
-            PEEPressure = (p_sensor.pressure_gauge_CM);
+            monitoring.PEEPressure = (p_sensor.pressure_gauge_CM);
             initMeasurePEEP = false;
           }
           else
           {
-            PEEPressure = (PEEPressure + (p_sensor.pressure_gauge_CM)) * 0.5;
+            monitoring.PEEPressure = (monitoring.PEEPressure + (p_sensor.pressure_gauge_CM)) * 0.5;
           }
-  //        TV.staticCompliance = (TV.inspiration / (plateauPressure - PEEPressure));
+  //        TV.staticCompliance = (TV.inspiration / (monitoring.plateauPressure - monitoring.PEEPressure));
         }
 
         // reset init Flags
@@ -573,6 +494,7 @@ void Monitoring()
   T_old_us = millis();
 
 #ifdef QT_PLOTTER
+if (plotterData) {
   Serial.print("$");
   Serial.print(FS.Q_SLM, 5);
   Serial.print(" ");
@@ -588,23 +510,28 @@ void Monitoring()
   Serial.print(control->valuePredicted,5);
   Serial.print(" ");
   Serial.print(control->error, 5);
+  Serial.print(" ");
+  Serial.print((float)actualBreathCycleTime/1000.0f, 5);
   // Serial.print(" ");
-  // Serial.print(breathPhase);
+  // Serial.print(status.breathPhase);
   // Serial.print(" ");
   // Serial.print(delta_t, 5);
   Serial.print(";\n");
+}
 #endif
 
 
 }
 
 
+#ifdef Beeper
+
 /*
      This is the main Alarm Control.
         Sensor Monitoring.
         Alarm Triggering.
 */
-void alarmControl() // Read Values from Installed Sensor
+void alarmControlOld() // Read Values from Installed Sensor
 {
 
   #define COUNT_10ms  10/samplePeriod1
@@ -620,7 +547,7 @@ void alarmControl() // Read Values from Installed Sensor
   // Low Battery
   // Battery Power In Use  
 
-  if ((VentilatorOperationON == 1) && (breathPhase != WAIT_PHASE)) //Ventilation Related Alarms
+  if ((status.VentilatorOperationON == 1) && (status.breathPhase != WAIT_PHASE)) //Ventilation Related Alarms
   {
     ////////////////////////////////////////////////////////////////////////////////
     ////////////////////////////////FAULT DETECTION////////////////////////////////
@@ -632,18 +559,18 @@ void alarmControl() // Read Values from Installed Sensor
       HighPeakPressAlarmCnt++;
     } else HighPeakPressAlarmCnt--;
 
-    if (PltPrsValid == true) //To Prevent False Alarms
+    if (status.PltPrsValid == true) //To Prevent False Alarms
     {
-      if (plateauPressure > (35.0)) //FOR COVID-19 : NHS Requirement
+      if (monitoring.plateauPressure > (35.0)) //FOR COVID-19 : NHS Requirement
       {
         HighPltPressAlarmCnt++;
       } else HighPltPressAlarmCnt--;
     } else HighPltPressAlarmCnt = 0;
 
 
-    if (PeepValid == true) //To Prevent False Alarms
+    if (status.PeepValid == true) //To Prevent False Alarms
     {
-      if (PEEPressure < (5.0)) //FOR COVID-19 : NHS Requirement
+      if (monitoring.PEEPressure < (5.0)) //FOR COVID-19 : NHS Requirement
       {
         LowPEEPAlarmCnt++;
       } else LowPEEPAlarmCnt--;
@@ -656,38 +583,35 @@ void alarmControl() // Read Values from Installed Sensor
     ///////////////////////////////////////////////////////////////////////////////
 
   //HIGH SEVERITY ALARMS HAVE PREFEREENCE
-    if (alarm.toneFreq <= SEVERITY_LOW_FREQ) //ONLY RING IF PREVIOUSLY MUTE
+    if (buzzer.toneFreq <= SEVERITY_LOW_FREQ) //ONLY RING IF PREVIOUSLY MUTE
     {
       if (HighPltPressAlarmCnt >= ((int)(COUNT_100ms))) //10 loop counts = 100ms;
       {
-        alarm.action = RING_ALARM;
-    //    alarm.toneFreq = SEVERITY_HIGH_FREQ;
-    //    alarm.timePeriod = SEVERITY_HIGH_TP;
-        alarm.toneFreq = SEVERITY_LOW_FREQ; //TESTING ONLY
-        alarm.timePeriod = SEVERITY_LOW_TP; //TESTING ONLY
-        ErrorNumber = HIGH_PIP;
+        buzzer.action = RING_ALARM;
+    //    buzzer.toneFreq = SEVERITY_HIGH_FREQ;
+    //    buzzer.timePeriod = SEVERITY_HIGH_TP;
+        buzzer.toneFreq = SEVERITY_LOW_FREQ; //TESTING ONLY
+        buzzer.timePeriod = SEVERITY_LOW_TP; //TESTING ONLY
       }
     }
 
-    if (alarm.toneFreq <= SEVERITY_MED_FREQ) //ONLY RING IF PREVIOUSLY MUTE OR PREVIOUS ALARM IS LOWER SEVERITY
+    if (buzzer.toneFreq <= SEVERITY_MED_FREQ) //ONLY RING IF PREVIOUSLY MUTE OR PREVIOUS ALARM IS LOWER SEVERITY
     {
       if (HighPltPressAlarmCnt >= ((int)(COUNT_100ms))) //10 loop counts = 100ms;
       {
-        alarm.action = RING_ALARM;
-        alarm.toneFreq = SEVERITY_MED_FREQ;
-        alarm.timePeriod = SEVERITY_MED_TP;
-        ErrorNumber = HIGH_PLT;
+        buzzer.action = RING_ALARM;
+        buzzer.toneFreq = SEVERITY_MED_FREQ;
+        buzzer.timePeriod = SEVERITY_MED_TP;
       }
     }
     
-    if (alarm.toneFreq <= SEVERITY_HIGH_FREQ)  //ONLY RING IF PREVIOUSLY MUTE OR PREVIOUS ALARM IS LOWER SEVERITY
+    if (buzzer.toneFreq <= SEVERITY_HIGH_FREQ)  //ONLY RING IF PREVIOUSLY MUTE OR PREVIOUS ALARM IS LOWER SEVERITY
     {
       if (LowPEEPAlarmCnt >= ((int)(COUNT_100ms))) //10 loop counts = 100ms;
       {
-        alarm.action = RING_ALARM;
-        alarm.toneFreq = SEVERITY_HIGH_FREQ;
-        alarm.timePeriod = SEVERITY_HIGH_TP;
-        ErrorNumber = LOW_PEEP;
+        buzzer.action = RING_ALARM;
+        buzzer.toneFreq = SEVERITY_HIGH_FREQ;
+        buzzer.timePeriod = SEVERITY_HIGH_TP;
       }
     }
   }
@@ -697,43 +621,25 @@ void alarmControl() // Read Values from Installed Sensor
     HighPltPressAlarmCnt = 0;
     LowPEEPAlarmCnt = 0;
 
-    PeepValid = false; //To Prevent False Alarms
-    PltPrsValid = false; //To Prevent False Alarms
+    status.PeepValid = false; //To Prevent False Alarms
+    status.PltPrsValid = false; //To Prevent False Alarms
   }
 }
-
-bool timer3InterruptTriggered = false;
-
-void timer3ISR()
-{
-  timer3InterruptTriggered = true;
-}
+#endif
 void setup()
 {
   // put your setup code here, to run once:
+#ifdef EN_WATCHDOG
+  wdt_disable();
+#endif
 
   unsigned long pre_millis = 0;
-  unsigned long prePressedTimestamp = 0;
-  unsigned int isPressedTime = 0;
+  bool initWarmUp = true;
 
-  plateauPressure = 0.0;
-  PEEPressure = 0.0;
-  peakInspPressure = 0.0;
-
-  CVmode = VOL_CONT_MODE;//PRESS_CONT_MODE; //Volume Controlled Mode
-  calibStatus = ST_COMPLETE;//ST_NOT_INIT;//ST_COMPLETE;
-  calibrationParam = PRESS_CONT_MODE;
-
- // Timer3.initialize(500000);   //microseconds //0.10sec
- // Timer3.attachInterrupt(timer3ISR);
-
-//  Timer1.initialize(200);
-//  Timer1.attachInterrupt(Timer);
-
-  pinMode(pin_Button_OK, INPUT);
-  pinMode(pin_Button_SNZ, INPUT);
+  // pinMode(pin_Button_OK, INPUT);
+  // pinMode(pin_Button_SNZ, INPUT);
   pinMode(pin_Switch_START, INPUT);
-  pinMode(pin_Switch_MODE, INPUT);
+  // pinMode(pin_Switch_MODE, INPUT);
 
   //    pinMode(pin_LmtSWT_CL1, INPUT);
   //    pinMode(pin_LmtSWT_CL2, INPUT);
@@ -743,75 +649,73 @@ void setup()
   pinMode(pin_Knob_3, INPUT);
   pinMode(pin_Knob_4, INPUT);
 #ifdef Beeper
-  pinMode(pin_Beep, OUTPUT);
+  pinMode(pin_BUZZER, OUTPUT);
 #endif
+  pinMode(pin_SLAVE_RESET, OUTPUT);
 
-  pinMode(3, OUTPUT);
+  calibStatus = ST_COMPLETE;//ST_NOT_INIT;//ST_COMPLETE;
+  calibrationParam = PRESS_CONT_MODE;
 
-  digitalWrite(3, LOW);
-  delay(500);
-  digitalWrite(3, HIGH);
+//  Timer1.initialize(200);
+//  Timer1.attachInterrupt(Timer1ISR);
 
+// Timer3: used for Monitoring & Alarms Management
 
+  //    noInterrupts();
+  pre_millis = millis();
+  while ((millis() - pre_millis) < WARM_UP_TIME)
+  {
+    if (initWarmUp) {
+      initWarmUp = false;
+      status.WarmUpFlag = true;
+      Serial.begin(SERIAL_BAUD);
+      Serial2.begin(SERIAL_BAUD);
+      #ifndef TEL_AT_UART0
+      #ifdef TX_SERIAL_TELEMETRY
+    //     Serial1.begin(SERIAL_BAUD);
+      #endif
+      #endif
+      Serial1.begin(SERIAL_BAUD);
+      
+      Wire.begin();
+      
+      LCD_setup();
+      Display();
+      
+      initFlowSensor();
+      digitalWrite(pin_SLAVE_RESET, LOW);
+      delay(5000);
+      digitalWrite(pin_SLAVE_RESET, HIGH);
+      delay(5000);
+    }
+  }
+  status.WarmUpFlag = false;
 
-  Wire.begin();
+  //    interrupts();
 
-  LCD_setup();
-  
-  Serial.begin(SERIAL_BAUD);
-  Serial2.begin(SERIAL_BAUD);
-  #ifndef TEL_AT_UART0
-  #ifdef TX_SERIAL_TELEMETRY
-     Serial1.begin(SERIAL_BAUD);
-  #endif
-  #endif
-
-
-
-  initFlowSensor();
+  noInterrupts();
+  monitoring.plateauPressure = 0.0;
+  monitoring.PEEPressure = 0.0;
+  monitoring.peakInspPressure = 0.0;
 
   // reserve 50 bytes for the inputString:
   slave.AckStr.reserve(50);
 
-  //    noInterrupts();
-  pre_millis = millis();
-
-  while ((millis() - pre_millis) < WARM_UP_TIME)
-  {
-    prePressedTimestamp = millis();
-    isPressedTime = millis() - prePressedTimestamp;
-
-    while (OkButton == HIGH && SnoozeButton == HIGH && isPressedTime < 2000)
-    {
-      isPressedTime = millis() - prePressedTimestamp;
-      if (timer3InterruptTriggered)
-      {
-        DevModeDetectionInProg = 1;
-//        userInterface();
-        timer3InterruptTriggered = false;
-      }
-    }
-    DevModeDetectionInProg = 0;
-
-    if (isPressedTime >= 2000)
-    {
-      devMode = 1;
-      WarmUpFlag = 0;
-      devModeFunc(); //MOVE LCD_DISPLAY to Userinterface
-    }
-    if (timer3InterruptTriggered)
-    {
-//      userInterface();
-      timer3InterruptTriggered = false;
-    }
-  }
-  //    interrupts();
-
-  noInterrupts();
   eeget();    // read startup parameters (either from EEPROM or default value)
 //  eeput();
 //  eeget();    // read startup parameters (either from EEPROM or default value)
   
+  setpoint.curBPM = setpoint.reqBPM;                 // Start from these values without sweep
+  setpoint.curVolume = setpoint.reqVolume;
+  setpoint.curPressure = setpoint.reqPressure;
+  setpoint.curI_E_Section = setpoint.reqI_E_Section; 
+  setpoint.curI_E = IE_R_Value[setpoint.curI_E_Section][1]; //Exhale Factor
+  setpoint.curFiO2 = setpoint.reqFiO2; //Exhale Factor
+  setpoint.curVentMode = setpoint.reqVentMode;
+  setpoint.curAssistMode_F = setpoint.reqAssistMode_F;
+  setpoint.curEnableCPAP_F = setpoint.reqEnableCPAP_F;
+  setpoint.curControlVariable = setpoint.reqControlVariable;
+
   InitializeParams();
 
 #ifdef CLOSED_LOOP
@@ -832,7 +736,7 @@ void setup()
   VolCoeffs[2] = 0.07018520;
   VolCoeffs[3] = 0.76970458;
 
-  if (CVmode == VOL_CONT_MODE)
+  if (setpoint.reqControlVariable == VOL_CONT_MODE)
     control->setConstants(0.8,0.1,deadBand,1200); //values send in this function are needed to be tested.
   else //PRESS_CON_MODE
     control->setConstants(0.8,0.1,1,70);
@@ -845,40 +749,40 @@ void setup()
  // -0.00258854	0.11181313	0.41835732	1.68697428    ///Nominal Resistance Test Lung //PEEP = 5cmH2O	
  
 // -0.00025210     0.01868789      0.43968305      -0.32840135 //With Standard Test Lung PEEP= 20cmH2O
-   PressCoeffs[0] = -0.00025210;
+  PressCoeffs[0] = -0.00025210;
   PressCoeffs[1] = 0.01868789;
   PressCoeffs[2] = 0.43968305;
   PressCoeffs[3] = -0.32840135;
 #endif
   interrupts();
 
-  tick1 = millis();
-  tick2 = millis();
-}
+  alarmsSetup();
 
-void devModeFunc() //Developer Mode
-{
-  while (devMode == 1)
-  {
-//    userInterface();
-    delay(1000);
-  }
+#ifdef EN_WATCHDOG
+  wdt_enable(WDTO_8S);
+#endif
+
 }
 
 void Ventilator_Control()
 {
+  static boolean skip = true;
   static boolean initIns = true;
   static boolean initHld = true;
   static boolean initExp = true;
   static boolean initWait = true;
   static boolean runMotor = true;
-  static uint8_t selectedControlMode = VOL_CONT_MODE;
+  static boolean init = true;
+  static boolean skipStep=1;
+
+  static uint16_t breathLength = 0;      // duration of the current breathing cycle in milliseconds. This is 60000/BPM.
   static unsigned int Tin = 0;
   static unsigned int Tex = 0;
   static unsigned int Th = 0; //ms
   static unsigned int Ttrigger = 500; //ms
   static uint16_t Tcur = 0;
   static unsigned long BreathStartTimestamp = 0;
+  static unsigned long cycleStartTimestamp = millis();
 
   static float reqMotorPos = 0.0; //mm
   /*static */float Vin = 0.0; //mm/s
@@ -891,24 +795,22 @@ void Ventilator_Control()
   static uint16_t periodIn = 0; //us
   static uint16_t periodEx = 0; //us
 
-
   static float stepsPredicted = 0.0;
 
-  static boolean init = true;
-
-  static boolean skipStep=1;
 
   //    noInterrupts();
-//  CVmode = VOL_CONT_MODE; //Proto-1
-//  assistControl = 0;
 
   if (init)
   {
-
     setpoint.curBPM = setpoint.reqBPM;                 // Start from these values without sweep
     setpoint.curVolume = setpoint.reqVolume;
     setpoint.curPressure = setpoint.reqPressure;
-    setpoint.curI_E = IE_R_Value[setpoint.reqI_E_Section][1]; //Exhale Factor
+    setpoint.curI_E_Section = setpoint.reqI_E_Section; 
+    setpoint.curI_E = IE_R_Value[setpoint.curI_E_Section][1]; //Exhale Factor
+    setpoint.curFiO2 = setpoint.reqFiO2; //Exhale Factor
+    setpoint.curAssistMode_F = setpoint.reqAssistMode_F;
+    setpoint.curEnableCPAP_F = setpoint.reqEnableCPAP_F;
+    setpoint.curControlVariable = setpoint.reqControlVariable;
 
     breathLength = (int)(60000 / setpoint.curBPM);
     // Take the hold time out of the exhale cycle. Do this to ensure respitory rate is correct.
@@ -921,12 +823,30 @@ void Ventilator_Control()
     Tcur = breathLength;
   }
 
-  if (activateVentilatorOperation == 1)
+  if ((activateVentilatorOperation || activateVentilatorControlSerial) && (status.sensorsHealth == HEALTH_GOOD)) 
   {
-    VentilatorOperationON = 1;
+    status.VentilatorOperationON = 1;
+    initWait = true;
+  }
+  else
+    status.VentilatorOperationON = 0;
+
+  if ((((slave.lastCMD_ID == HOME) && (slave.homeAck != 2)) || (status.homeAtBadSensor)) && (!skip))
+  {
+    status.VentilatorOperationON = 0;
+    Serial.println(slave.lastCMD_ID);
+    Serial.println(slave.homeAck);
+    Serial.println(F("Homing Not Complete"));
+  }
+  
+
+  if (status.VentilatorOperationON == 1)
+  {
+    skip = false;
+//    status.VentilatorOperationON = 1;
     initWait = true;
 
-    if (assistControl == 1) {
+    if (setpoint.curAssistMode_F == 1) {
       if (patientTriggeredBreath)
       {
         Tcur = breathLength; //Start a new inhale Cycle 
@@ -937,47 +857,48 @@ void Ventilator_Control()
     if (Tcur >= breathLength)
     {
       Tcur = 0;
-      if (CVmode != selectedControlMode)
+      setpoint.curAssistMode_F = setpoint.reqAssistMode_F;
+      setpoint.curEnableCPAP_F = setpoint.reqEnableCPAP_F;
+      if (setpoint.reqControlVariable != setpoint.curControlVariable)
       {
-        selectedControlMode = CVmode;
-
-
-
-        if (CVmode == VOL_CONT_MODE){
+        setpoint.curControlVariable = setpoint.reqControlVariable;
+        if (setpoint.curControlVariable == VOL_CONT_MODE){
           control->setConstants(0.8,0.1,20,1200);
           control->resetController((float)setpoint.curVolume);
         }
-        else if(CVmode == PRESS_CONT_MODE){
+        else if(setpoint.curControlVariable == PRESS_CONT_MODE){
           control->setConstants(0.8,0.1,1,70);
           control->resetController((float)setpoint.curPressure);
         }
-          skipStep=1;
-        
+        skipStep=1;
       }
       if (abs(setpoint.curVolume - setpoint.reqVolume) >= 1) {
         setpoint.curVolume = setpoint.reqVolume;
-        if (CVmode == VOL_CONT_MODE) {
+        if (setpoint.curControlVariable == VOL_CONT_MODE) {
           control->resetController((float)setpoint.curVolume);
           skipStep=1;}
       }
       if (abs(setpoint.curPressure - setpoint.reqPressure) >= 1) {
         setpoint.curPressure = setpoint.reqPressure;
-        if(CVmode == PRESS_CONT_MODE) {
+        if(setpoint.curControlVariable == PRESS_CONT_MODE) {
           control->resetController((float)setpoint.curPressure);
           skipStep=1; }
       }
       setpoint.curBPM = setpoint.reqBPM;                 // Load Fresh User Settings
-      setpoint.curI_E = IE_R_Value[setpoint.reqI_E_Section][1]; //Exhale Factor
+      setpoint.curI_E_Section = setpoint.reqI_E_Section; 
+      setpoint.curI_E = IE_R_Value[setpoint.curI_E_Section][1]; //Exhale Factor
+
 
       breathLength = (int)(60000 / setpoint.curBPM);
       if (holdManeuver) Th = holdDur_ms; else Th = 0;
       // Take the hold time out of the exhale cycle. Do this to ensure respitory rate is correct.
       Tin = (int)((breathLength - Th) / (1 + setpoint.curI_E)); // if I/E ratio = 0.5 ; it means expiration is twice as long as inspiration
       Tex = (int)(breathLength - Th - Tin);
-      if (CVmode == VOL_CONT_MODE) {
+      if (setpoint.curControlVariable == VOL_CONT_MODE) {
 
      if(!skipStep){
-      stepsPredicted = control->compensateError((float)setpoint.curVolume,TV.inspiration);    
+//      stepsPredicted = control->compensateError((float)setpoint.curVolume,TV.inspiration);    
+      stepsPredicted = control->compensateError((float)setpoint.curVolume,TV.maxInhale);    
      }
       else{
       stepsPredicted= setpoint.curVolume;  
@@ -986,13 +907,14 @@ void Ventilator_Control()
 //        reqMotorPos = setpoint.curVolume / LINEAR_FACTOR_VOLUME; //mm
         reqMotorPos = (VolCoeffs[0] * pow(stepsPredicted, 3)) + (VolCoeffs[1] * pow(stepsPredicted, 2)) + (VolCoeffs[2] * stepsPredicted) + VolCoeffs[3];
        // reqMotorPos = stepsPredicted;
+       reqMotorPos = 30.0;
         reqMotorPos = constrain(reqMotorPos, 0.0, 40.0);
       }
       else //PRESS_CONT_MODE 
       {
         
       if(!skipStep){
-        stepsPredicted = control->compensateError((float)setpoint.curPressure, plateauPressure);
+        stepsPredicted = control->compensateError((float)setpoint.curPressure, monitoring.plateauPressure);
       }
       else{
         stepsPredicted= setpoint.curPressure;  
@@ -1016,7 +938,7 @@ void Ventilator_Control()
 #ifndef TEL_AT_UART0
           static int i = 0;
            Serial.print(F("In Ventilator Control: ")); Serial.println(i++);
-           Serial.print(F("Control Mode:      ")); Serial.println(CVmode); //0 = VOL; 1 = PRESS          
+           Serial.print(F("Control Mode:      ")); Serial.println(setpoint.curControlVariable); //0 = VOL; 1 = PRESS          
            Serial.print(F("Breathing Length:      ")); Serial.println(breathLength);
            Serial.print(F("Inspiration Time:      ")); Serial.print(Tin); Serial.println(F(" ms"));
            Serial.print(F("Expiration Time:       ")); Serial.print(Tex); Serial.println(F(" ms"));
@@ -1045,15 +967,17 @@ void Ventilator_Control()
           initIns = false;
           initExp = true;
         }        
-//        breathPhase = INSPIRATION_PHASE;
+//        status.breathPhase = INSPIRATION_PHASE;
         if (runMotor && (slave.runAck == 0 || slave.runAck == 2)) //!setpointAchieved && //CMD NOT RECEIVED
         {
-          breathPhase = INSPIRATION_PHASE;
+          actualBreathCycleTime = millis() - cycleStartTimestamp;
+          status.breathPhase = INSPIRATION_PHASE;
           txSlaveCMD(RUN, periodIn, stepIn, "1");
           runMotor = false;
           slave.lastCMD_ID = RUN;
+          cycleStartTimestamp = millis();
         }
-        PEEPMesaureFlag = 0;
+        PEEPMesaureFlag = false;
       }
       else if ((Tcur > Tin) && (Tcur <= (Tin + Th)))
       {
@@ -1067,7 +991,7 @@ void Ventilator_Control()
           initIns = true;
           initExp = true;
         }        
-        breathPhase = HOLD_PHASE;
+        status.breathPhase = HOLD_PHASE;
       }
       else if ((Tcur > (Tin + Th)) && (Tcur < (Tin + Th + Tex)))
       {
@@ -1079,11 +1003,11 @@ void Ventilator_Control()
           initIns = true;
           initExp = false;
         }                
-//        breathPhase = EXPIRATION_PHASE;
+//        status.breathPhase = EXPIRATION_PHASE;
 
         if (runMotor && (slave.runAck == 0 || slave.runAck == 2)) //CMD NOT RECEIVED
         {
-          breathPhase = EXPIRATION_PHASE;
+          status.breathPhase = EXPIRATION_PHASE;
           txSlaveCMD(RUN, periodEx, stepEx, "0");
           runMotor = false;
           slave.lastCMD_ID = RUN;
@@ -1091,179 +1015,140 @@ void Ventilator_Control()
 
         if ((Tcur >= (Tin + Tex)) && (Tcur < (Tin + Th + Tex)))
         {
-          PEEPMesaureFlag = 1;
+          PEEPMesaureFlag = true;
         }
 
-        if (assistControl == 1) {
-        if ((Tin + Th + Tex - Tcur) < Ttrigger) 
-        {
-          scanBreathingAttempt = true;
-        }        }
+        if (setpoint.curAssistMode_F == 1) {
+          if ((Tin + Th + Tex - Tcur) < Ttrigger) 
+          {
+            scanBreathingAttempt = true;
+          }        
+        }
       }
   }
   else
   {
+    static uint8_t ctr = 0;
     #ifndef TEL_AT_UART0
-    //      Serial.println(F("Ventilator Operation Halt"));
+          Serial.println(F("Ventilator Operation Halt"));
     #endif
-    if (initWait) {slave.homeAck = 0; initWait = false;}
+    if (initWait) {
+      ctr = 0;
+      slave.homeAck = 0; slave.stopAck = 0; 
+      txSlaveCMD(STOP);
+      slave.lastCMD_ID = STOP;
+
+      if (status.sensorsHealth == HEALTH_BAD)
+        status.homeAtBadSensor = true;
+      if (p_sensor.sensorHealth == HEALTH_BAD)
+        status.homeAtBadPressSensor = true;
+      if (FS.sensorHealth == HEALTH_BAD)
+        status.homeAtBadFlowSensor = true;
+      initWait = false;}
+      ctr++;
     initHld = true;
     initIns = true;
     initExp = true;
-    VentilatorOperationON = 0;
-    breathPhase = WAIT_PHASE;
+    //status.VentilatorOperationON = 0;
+    status.breathPhase = WAIT_PHASE;
     Tcur = breathLength; // This will always start inspiration breath cycle on setting switch to start position
-    PeepValid = false; //To Prevent False Alarms
-    PltPrsValid = false; //To Prevent False Alarms
+    status.PeepValid = false; //To Prevent False Alarms
+    status.PltPrsValid = false; //To Prevent False Alarms
 
-
-    if (slave.homeAck == 0)
+    // if (slave.stopAck == 0)
+    // {
+    //   txSlaveCMD(STOP);
+    //   slave.lastCMD_ID = STOP;
+    // }
+    if ((slave.homeAck == 0) && (ctr >= 5))
     {
         txSlaveCMD(HOME, 2000);
         slave.lastCMD_ID = HOME;
+
 	    slave.runAck = 0;
     }
-    PEEPMesaureFlag = 0;
+    else if (slave.homeAck == 2) {
+      status.homeAtBadSensor = false;
+      status.homeAtBadPressSensor = false;
+      status.homeAtBadFlowSensor = false;
+    }
+    PEEPMesaureFlag = false;
   }
   //    interrupts();
 }
 
-#ifdef TX_SERIAL_TELEMETRY
-void GetTelData()
-{
-
-  static boolean init = true;
-  byte TEL_BYTE = 0x00;
-  if (init)
-  {
-    TEL.Time = 0;
-    TEL.txUpdateRate = 0;
-    TEL.FDCB = 0xFF;
-    init = false;
-  }
-
-  TEL.Time += (samplePeriod1);
-
-  if ((TEL.Time % 20) == 0)
-  {
-    TEL.mTV = TV.measured; //ml
-    //TEL.mTV = constrain(TEL.mTV, 0.0, 1000.0);
-    TEL.mTVinsp = TV.inspiration; //ml
-    TEL.mTVexp = TV.expiration; //ml
-    TEL.mPressure = p_sensor.pressure_gauge_CM; //cmH2O
-    TEL.mFlowRate = FS.Q_SLM; //SLPM
-    TEL.mPEEP = PEEPressure;
-    TEL.mPltPress = plateauPressure;
-    TEL.mFiO2 = 0.0;
-    TEL.minuteVentilation = TV.minuteVentilation;
-    TEL.mPeakPressure = peakInspPressure;
-    TEL.mRR = 0.0;
-    TEL.staticCompliance = TV.staticCompliance;
-    TEL.spTrigger = setpoint.flowTriggerSenstivity;
-
-    TEL.spTV = setpoint.reqVolume;
-    TEL.spInsPressure = setpoint.reqPressure;
-    TEL.spExpPressure = 5; //0;
-
-    TEL.spFiO2 = setpoint.reqFiO2;
-    TEL.spBPM = setpoint.reqBPM;
-    TEL.spIE_Inhale = IE_R_Value[setpoint.reqI_E_Section][0];
-    TEL.spIE_Exhale = IE_R_Value[setpoint.reqI_E_Section][1];
-    TEL.patientWeight = patientWeight;
-
-    TEL.statusByteError = ErrorNumber;
-    TEL_BYTE = 0x00;
-    TEL_BYTE |= breathPhase & 0x03;
-    if (CVmode == PRESS_CONT_MODE)  TEL_BYTE |= 0x04;
-    if (assistControl == 1)  TEL_BYTE |= 0x08;
-    if (VentilatorOperationON == 1)  TEL_BYTE |= 0x10;
-    if (selfTestProg == ST_IN_PROG)
-      TEL_BYTE |= 0x20;
-    else if ((selfTestProg == ST_COMPLETE) && (selfTestStatus == ST_FAIL))
-      TEL_BYTE |= 0x40;
-    else if ((selfTestProg == ST_COMPLETE) && (selfTestStatus == ST_PASS))
-      TEL_BYTE |= 0x60;
-    else //NOT INIT
-      TEL_BYTE &= 0x9F; //Clear D5 and D6
-//    if (spStatusAllowChange == 1) TEL_BYTE |= 0x80; //D7 High if Settings Unsaved
-
-    TEL.statusByte1 = TEL_BYTE;
-    TEL.FDCB = 0xCC;
-  }
-}
-#endif
-
-
-
 void loop()
 {
-
+  static float timeSincePowerUp = 0.0;
+  static unsigned long tick1 = 0;            // counter used to trigger sensor measurements //loop 1
+  static unsigned long tick2 = 0;             // counter used to trigger Control Loop // loop 2
   static unsigned long tick3 = 0;
+
   unsigned long start_Ts = 0;
-  WarmUpFlag = 0;
-#ifdef StepGen
-//  digitalWrite(pin_Stepper_SLP, HIGH);
-#endif
+
+  #ifdef EN_WATCHDOG
+    wdt_reset();
+  #endif
+
   if (millis() > (tick1 + samplePeriod1))
   {
-    start_Ts = micros();
+    timeSincePowerUp = ((float)(millis() - tick1) / 1000.0f);
     tick1 = millis();
+
+    if (timeSincePowerUp >= 345600.0) // 96 * 60 * 60
+      status.hours96_complete = true;
+    else if (timeSincePowerUp >= 10.0)
+      status.systemReset = false;
+
+    //start_Ts = micros();
     readSensors();
+    checkSensorHealth();
     Monitoring();
 
-//    if (slave.strComplete == true)
-//    {
-//      decodeSlaveTel();
-//      slave.AckStr = "";
-//      slave.strComplete = false;
-//    }
-    
-
-    if (selfTestProg != ST_COMPLETE)
+    if (status.selfTestProg != ST_COMPLETE) {
       selfTest();
-    else
-    {
-//      alarmControl();
     }
-#ifdef ActiveBeeper
+
+    start_Ts = micros();
+    alarmControl();
+    Serial.print(F("Busy Time alarmsControl: ")); Serial.println(micros()-start_Ts);
+
+#ifdef Beeper
     beep(); //alarmAction = RING_ALARM, SNOOZE_ALARM; alarmSeverity = SEVERITY_HIGH, SEVERITY_MED, SEVERITY_LOW, SEVERITY_MUTE
 #endif
-
 #ifdef TX_SERIAL_TELEMETRY
     GetTelData(); //Called at 100Hz
     Prepare_Tx_Telemetry(); //Called at 100Hz
 #endif
 //Serial.print(F("Busy Time 1: ")); Serial.println(micros()-start_Ts);
   }
-  if ((selfTestProg == ST_COMPLETE) && (selfTestStatus == ST_PASS)) // I am not writing control loop inside 100Hz loop to keep both loop rates independant
+
+  if ((status.selfTestProg == ST_COMPLETE) && (status.selfTestStatus == ST_PASS)) // I am not writing control loop inside 100Hz loop to keep both loop rates independant
   {
     if (millis() > (tick2 + samplePeriod2))
     {
-      start_Ts = micros();
+      //start_Ts = micros();
       tick2 = millis();
-      Ventilator_Control(); //Mandatory Volume Controlled Mode Only
+      Ventilator_Control();
 //Serial.print(F("Busy Time 2: ")); Serial.println(micros()-start_Ts);
     }
   }
-//  if (timer3InterruptTriggered)
   if (millis() > (tick3 + 500))
   {
     tick3 = millis();
     readSwitches();
      start_Ts = micros();
      Display();
-     Serial.print("Busy Time Display: "); Serial.println(micros()-start_Ts);
-// #ifdef Beeper
-//   if (SnoozeButton == 1)
-//   {
-//     alarm.action = SNOOZE_ALARM;
-//     ErrorNumber = 0;
-//   }
-// #endif
-  //  timer3InterruptTriggered = false;
+     Serial.print(F("Busy Time Display: ")); Serial.println(micros()-start_Ts);
   }
 }
 
+#ifndef TX_SERIAL_TELEMETRY
+void serialEvent1()
+{
+  processCommands();
+}
+#endif
 
 /*
   SerialEvent occurs whenever a new data comes in the hardware serial RX. This
@@ -1271,82 +1156,5 @@ void loop()
   delay response. Multiple bytes of data may be available.
 */
 void serialEvent2() {
-    while (Serial2.available()) {
-      // get the new byte:
-      char inChar = (char)Serial2.read();
-      // add it to the inputString:
-      slave.AckStr += inChar;
-      // if the incoming character is a newline, set a flag so the main loop can
-      // do something about it:
-      if (inChar == '\r') {
-        #ifndef TEL_AT_UART0
-      Serial.println(slave.AckStr);
-      #endif
-        slave.strComplete = true;
-      }
-    }
-    if (slave.strComplete == true)
-    {
-      decodeSlaveTel();
-      slave.AckStr = "";
-      slave.strComplete = false;
-    }
-}
-
-void decodeSlaveTel()
-{
-  String message = "";
-
-    for (int i = 0; i < slave.AckStr.length(); i++)
-    {
-      if (slave.AckStr[i] == '#')
-      {
-        if ((slave.AckStr[i+1] == 'R') && (slave.AckStr[i+2] == 'U') && (slave.AckStr[i+3] == 'N'))
-        {
-          message = slave.AckStr[i+5];
-          slave.runAck = message.toInt();
-    //      Serial.print("runAck = ");Serial.println(slave.runAck);
-          break;
-        }
-        else if ((slave.AckStr[i+1] == 'S') && (slave.AckStr[i+2] == 'T') && (slave.AckStr[i+3] == 'O') && (slave.AckStr[i+4] == 'P'))
-        {
-          message = slave.AckStr[i+6];
-          slave.stopAck = message.toInt();
-      //    Serial.print("stopAck = ");Serial.println(slave.stopAck);
-          break;
-        }
-        else if ((slave.AckStr[i+1] == 'H') && (slave.AckStr[i+2] == 'O') && (slave.AckStr[i+3] == 'M') && (slave.AckStr[i+4] == 'E'))
-        {
-          message = slave.AckStr[i+6];
-          slave.homeAck = message.toInt();  
-//          Homing_Done_F = slave.homeAck;
-     //     Serial.print("homeAck = ");Serial.println(slave.homeAck);
-          break;        
-        }
-      }
-    }
-}
-
-
-void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String dir="0")
-{
-  String cmdString = "";
-  switch (CMD_ID)
-  {
-  case RUN:
-    cmdString = "#RUN " + String(pulses) + " " + String(period) + " " + dir + "\r";
-    break;
-  case HOME:
-    cmdString = "#HOME " + String(period) + "\r";
-    break;
-  case STOP:
-    cmdString = "#STOP\r";
-    break;
-  default:
-    break;
-  }
-  Serial2.print(cmdString);
-#ifndef TEL_AT_UART0
-  Serial.println(cmdString);
-  #endif
+  receiveSlaveTel();
 }
