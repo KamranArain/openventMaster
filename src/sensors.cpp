@@ -1,11 +1,26 @@
 
 #include "header.h"
 #include "flowSensor.h"
+#include "sensors.h"
+#include <Adafruit_ADS1015.h>
 
 extern struct Flow_Sensor FS;
-extern struct P_Sensor p_sensor;
 extern struct STATUS_FLAGS status;
 extern struct Slave slave;
+extern struct setpointStatus setpoint;
+#ifdef FS6122
+extern struct FS6122_TYPE fs6122;
+#endif
+
+
+struct P_Sensor p_sensor;
+struct O2_Sensor O2;
+
+Adafruit_ADS1115 ads(I2C_ADDRESS_ADS1015);  /* Use this for the 16-bit version */
+const float o2_mv_air = 15.3;
+
+//float alpha=0.5;
+float avgO2=0;
 
 #ifdef MS4525DO
 /*
@@ -18,7 +33,7 @@ inline static void get_sensor_data(uint16_t *raw) {
 //  if ((slave.lastCMD_ID == HOME) && (status.homeAtBadPressSensor))
   if (status.homeAtBadPressSensor)
   {
-    Serial.println("Waiting For Homing Complete: Press Sensor");
+    // Serial.println("Waiting For Homing Complete: Press Sensor");
   }
   else {
     Wire.beginTransmission(I2C_ADDRESS_MS4525DO);
@@ -112,20 +127,68 @@ if (p_sensor.sensorHealth == HEALTH_GOOD) {
     FS.Q_SLM =flowValue;
   #elif defined(SFM3200AW)    
   float flowValue =  getFlowValue();
-  if (FS.sensorHealth == HEALTH_GOOD)
-    FS.Q_SLM =flowValue;
+  if (FS.sensorHealth == HEALTH_GOOD) {
+    
+    FS.Q_SFM = (1.2405*flowValue) - 0.2334;
+    
+    
+    FS.Q_SLM = FS.Q_SFM;
+
+    
+
+  }
   #endif
   #endif
+
+  #ifdef FS6122
+  read_fs6122_flow_pressure();
+  // FS.sensorHealth = HEALTH_GOOD;
+  // FS.connectionStatus = 0;
+
+  static float oldQ = 0.0;
+  static float avgQ = 0.5;
+  float q = fs6122.flow_rate_slpm;
+  q = (q * avgQ) + ( oldQ * (1.0 - avgQ));
+  oldQ = q;
+  fs6122.flow_rate_slpm_filt = oldQ;
+  // FS.Q_SLM = oldQ;
+  // FS.Q_SLM = fs6122.flow_rate_slpm;
+
+
+  p_sensor.pressure_gauge_CM = (0.9503 *fs6122.pressure_cmh2o) + 0.5025;;
+
+
+  p_sensor.connectionStatus = 0;
+  p_sensor.sensorHealth = HEALTH_GOOD;
+  // read_fs6122_humidity();
+  // read_fs6122_temperature();
+  #endif
+
+ O2.FIO2_conc = getO2Concentration();
+
+  static uint8_t curFiO2_sp = setpoint.reqFiO2;
+
+  if (curFiO2_sp != setpoint.reqFiO2)
+  {
+    curFiO2_sp = setpoint.reqFiO2;
+    status.FIO2Valid = false;
+    O2.timestamp = millis();
+  }  
+  if (((millis() - O2.timestamp) >= O2.settlingTime) || status.FIO2Valid)
+  {
+    status.FIO2Valid = true;
+  }
+
 }
 
 
 void checkSensorHealth()
 {
   #define decisionTime  2 //10 * 10 = 100 ms 
-  #define decisionTimeStatusDeclaration 5 //10 * 10 = 100 ms 
+  #define decisionTimeStatusDeclaration 3 //10 * 10 = 100 ms 
   static uint8_t HealthCtr = 0;
-  static uint8_t FS_HealthCtr = 0;
-  static uint8_t PS_HealthCtr = 0;
+  static int16_t FS_HealthCtr = 0;
+  static int16_t PS_HealthCtr = 0;
   
   if ((FS.sensorHealth == HEALTH_GOOD) && (p_sensor.sensorHealth == HEALTH_GOOD))
     HealthCtr++;
@@ -150,14 +213,14 @@ void checkSensorHealth()
       initFlowSensor();
     #endif
   #ifndef TEL_AT_UART0
-      Serial.println(F("Flow Sensor Health BAD"));
-      Serial.print(F("Flow Sensor Error Code: ")); Serial.println(FS.connectionStatus);
+      // Serial.println(F("Flow Sensor Health BAD"));
+      // Serial.print(F("Flow Sensor Error Code: ")); Serial.println(FS.connectionStatus);
   #endif  
   }
 
-  FS_HealthCtr = constrain(FS_HealthCtr, 0, decisionTimeStatusDeclaration);
+  FS_HealthCtr = constrain(FS_HealthCtr, -1*decisionTimeStatusDeclaration, decisionTimeStatusDeclaration);
   if (FS_HealthCtr >= decisionTimeStatusDeclaration)  status.flowSensorFailure = false;
-  else if (FS_HealthCtr <= 0)        status.flowSensorFailure = true;
+  else if (FS_HealthCtr <= (-1*decisionTimeStatusDeclaration))        status.flowSensorFailure = true;
 
 ////////////////////////////////////////////////////////////////////////////////////
   if (p_sensor.sensorHealth == HEALTH_GOOD)
@@ -165,13 +228,79 @@ void checkSensorHealth()
   else {
     PS_HealthCtr--;
   #ifndef TEL_AT_UART0
-      Serial.println(F("Pressure Sensor Health BAD"));
-      Serial.print(F("Pressure Sensor Error Code: ")); Serial.println(p_sensor.connectionStatus);
+      // Serial.println(F("Pressure Sensor Health BAD"));
+      // Serial.print(F("Pressure Sensor Error Code: ")); Serial.println(p_sensor.connectionStatus);
   #endif
   }
 
-  PS_HealthCtr = constrain(PS_HealthCtr, 0, decisionTimeStatusDeclaration);
+  PS_HealthCtr = constrain(PS_HealthCtr, -1*decisionTimeStatusDeclaration, decisionTimeStatusDeclaration);
   if (PS_HealthCtr >= decisionTimeStatusDeclaration)  status.presSensorFailure = false;
-  else if (PS_HealthCtr <= 0)        status.presSensorFailure = true;
+  else if (PS_HealthCtr <= (-1*decisionTimeStatusDeclaration))        status.presSensorFailure = true;
 }
 
+void initO2Sensor() {
+  ads.setGain(GAIN_SIXTEEN);    // 16x gain  +/- 0.256V  1 bit = 0.125mV  0.0078125mV  
+  ads.begin();
+  O2.timestamp = millis();
+}
+
+float getO2Concentration() {
+  int16_t adc0, adc1;
+  float   o2_volt;
+  float   o2_comp_volt;
+  float   o2_conc;
+  float   p_volt, p_bar;
+  float retval;
+  float newO2;
+
+  //O2
+  adc0 = ads.readADC_SingleEnded(0); 
+  //P
+  adc1 = ads.readADC_SingleEnded(1);
+
+  p_volt = adc1 * 0.0078125;
+  p_bar = p_volt / 10.0;
+  p_bar = (p_bar - 4.0) / 16.0;
+  p_bar = p_bar * 22.0;
+  
+  o2_volt = adc0 * 0.0078125; 
+  o2_comp_volt = o2_volt / (1.0 + p_bar);
+  o2_conc = o2_comp_volt / o2_mv_air * 20.9;
+
+
+  newO2 = (1.81*o2_conc) - 15.844;
+
+
+  //o2_conc = (o2_conc / 1.25); 
+
+  //avgO2 = (alpha * o2_conc) + (1-alpha)*avgO2;
+
+  retval = newO2;
+
+  if (retval > 100.0) retval= 100.0;
+
+  /* 
+
+  Serial.print("O2 Volts: "); Serial.println(o2_volt);
+  Serial.print("O2 Conc: "); Serial.println(o2_conc);
+  Serial.print("P Volts: "); Serial.println(p_volt);
+  Serial.print("P bar: "); Serial.println(p_bar);
+*/
+
+//  Serial.print("$");
+//  Serial.print(o2_volt);
+//  Serial.print(" ");
+//  Serial.print(o2_comp_volt);
+//  Serial.print(" ");
+//  Serial.print(o2_conc);
+//  Serial.print(" ");
+//  Serial.print(newO2);
+//  Serial.print(" ");
+//   Serial.print(p_bar);
+//  Serial.print(";");
+
+  O2.Pbar = p_bar;
+//  Serial.print("O2: ");Serial.println(o2_conc);
+//  Serial.print("pbar: ");Serial.println(p_bar);
+  return retval;
+}

@@ -12,6 +12,7 @@ class Control{
   
   float valuePredicted;
   float error;  
+  bool motorAtLimit,motorIsWorking;
   private:
 
   float kP;

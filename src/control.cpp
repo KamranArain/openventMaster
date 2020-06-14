@@ -15,12 +15,23 @@ float Control::compensateError(float setPoint,float measured){
       }
 
       currentValuePredicted=kP*error+kI*discreteIntegral; //Weight of Error will reduce with Kp reaching its point + Weight of Error increase by time to reach goal with Ki.
-  
-      if(valuePredicted<=errorLimit)
+
+      if(motorIsWorking && (!motorAtLimit||(valuePredicted>(currentValuePredicted+valuePredicted))))
       currentValuePredicted=currentValuePredicted+valuePredicted; //Total Steps added/subtracted From begining of cycle.
+      else if(motorIsWorking && motorAtLimit){
+      currentValuePredicted=valuePredicted;    
+      }
       else{
       currentValuePredicted=selectedSetPoint;
       }
+
+      // if(valuePredicted<=errorLimit)
+      // currentValuePredicted=currentValuePredicted+valuePredicted; //Total Steps added/subtracted From begining of cycle.
+      // else{
+      // currentValuePredicted=selectedSetPoint;
+      // }
+
+
   
       valuePredicted=fabs(currentValuePredicted);
 
@@ -37,11 +48,15 @@ void Control::setConstants(float kp,float ki,float bandIntegral,float eLimit){
      valuePredicted=0;
      selectedSetPoint=0;
      discreteIntegral=0;
+     motorAtLimit=false;
+     motorIsWorking=true;
                
 }
 
 void Control::resetController(float sP){
   discreteIntegral=0;
   selectedSetPoint=sP;
-  valuePredicted=selectedSetPoint;  
+  valuePredicted=selectedSetPoint;
+   motorAtLimit=false;
+   motorIsWorking=true;  
 }

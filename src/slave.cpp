@@ -1,5 +1,6 @@
 #include "header.h"
 
+extern struct STATUS_FLAGS status;
 extern struct Slave slave;
 extern struct MONITORING_PARAMS monitoring;
 
@@ -13,9 +14,12 @@ void receiveSlaveTel() {
       // do something about it:
       if (inChar == '\r') {
         #ifndef TEL_AT_UART0
-      Serial.println(slave.AckStr);
+      // Serial.print(F("Rcvd Ack Str: "));
+      // Serial.print(F("B: "));
+      Serial3.print(slave.AckStr);
       #endif
         slave.strComplete = true;
+        break;
       }
     }
     if (slave.strComplete == true)
@@ -53,10 +57,10 @@ void decodeSlaveTel()
         {
           message = slave.AckStr[i+6];
           slave.homeAck = message.toInt();  
-     //     Serial.print("homeAck = ");Serial.println(slave.homeAck);
+         Serial.print(F("Decoded homeAck = "));Serial.println(slave.homeAck);
           break;        
         }
-        if ((slave.AckStr[i+1] == 'R') && (slave.AckStr[i+2] == 'R') )
+        else if ((slave.AckStr[i+1] == 'R') && (slave.AckStr[i+2] == 'R') )
         {
           char inChar;
           uint8_t j = i+4;
@@ -67,7 +71,8 @@ void decodeSlaveTel()
             inChar = slave.AckStr[j];
           }
           monitoring.measuredRR = message.toInt();
-          Serial.print(F("Measured RR = ")); Serial.print(monitoring.measuredRR); Serial.println(F(" BPM"));
+          status.RRValid = true;
+          // Serial.print(F("Measured RR = ")); Serial.print(monitoring.measuredRR); Serial.println(F(" BPM"));
           break;
         }
       }
@@ -94,6 +99,6 @@ void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String
   }
   Serial2.print(cmdString);
 #ifndef TEL_AT_UART0
-  Serial.println(cmdString);
+  Serial3.print(F("M: "));Serial3.println(cmdString);
   #endif
 }

@@ -7,6 +7,9 @@ SFM3x00 measflow(I2C_ADDR_SFM);
 #endif
 
 struct Flow_Sensor FS;
+#ifdef FS6122
+struct FS6122_TYPE fs6122;
+#endif
 #if defined(FLOW_SENSOR_CN)
 void get_sensor_data(byte *a, byte *b);
 #endif
@@ -30,6 +33,12 @@ void initFlowSensor()
     #endif
 
     #if defined(FLOW_SENSOR_CN)
+    #endif
+
+    #ifdef FS6122
+    write_fs6122_filter();
+    delay(1000);
+    read_fs6122_filter();
     #endif
 }
 
@@ -165,4 +174,123 @@ void get_sensor_data(byte *a, byte *b) {
 //   else FS.sensorHealth = HEALTH_GOOD;
 }
 
+#endif
+
+#if defined(FS6122)
+void read_fs6122_flow_pressure() {
+
+  byte a,b,c,d;
+  int32_t flow_rate, pressure;
+
+  Wire.beginTransmission(FS6122_SENSOR_ADDR);
+  Wire.write(0x84);
+  Wire.endTransmission();
+  delay(1);
+  Wire.requestFrom(FS6122_SENSOR_ADDR, 8);
+
+  a = Wire.read();
+  b = Wire.read();
+  c = Wire.read();
+  d = Wire.read();
+
+
+/*
+  flow_rate = a  << 24;
+  flow_rate |= b << 16;
+  flow_rate |= c << 8;
+  flow_rate |= d;
+*/
+  
+  flow_rate =  a; flow_rate <<= 8; // shift by byte each read
+  flow_rate |= b; flow_rate <<= 8;
+  flow_rate |= c; flow_rate <<= 8;
+  flow_rate |= d; 
+  
+  pressure = Wire.read(); pressure <<= 8;
+  pressure |= Wire.read(); pressure <<= 8;
+  pressure |= Wire.read(); pressure <<= 8;
+  pressure |= Wire.read(); 
+
+  uint32_t divider = 1000; // divide both values by 1000 (TODO: CHECK: is this a problem, using 1024 instead?!)
+
+  fs6122.flow_rate_slpm = -1.0 * (float)flow_rate / divider;
+  fs6122.pressure_cmh2o = (float)pressure / divider;
+
+
+}
+
+
+void read_fs6122_temperature(void) {
+  int16_t temperature;
+  
+  Wire.beginTransmission(FS6122_SENSOR_ADDR);
+  Wire.write(FS6122_READ_TEMPERATURE);
+  Wire.endTransmission();
+  delay(1);
+  Wire.requestFrom(FS6122_SENSOR_ADDR, 2);
+
+  temperature = Wire.read(); temperature <<= 8; // shift by byte each read
+  temperature |= Wire.read();
+
+  uint16_t divider = 100; // divide both values by 1000
+
+  fs6122.temperature_c = (float)temperature / divider;
+
+}
+
+void read_fs6122_humidity(void) {
+  int16_t humidity;
+  
+  Wire.beginTransmission(FS6122_SENSOR_ADDR);
+  Wire.write(FS6122_READ_HUMIDITY);
+  Wire.endTransmission();
+  delay(1);
+  Wire.requestFrom(FS6122_SENSOR_ADDR, 2);
+
+  
+  humidity = Wire.read(); humidity <<= 8; // shift by byte each read
+  humidity |= Wire.read();
+
+  uint16_t divider = 100; // divide both values by 1000
+
+  fs6122.humidity_prh = (float)humidity / divider;
+
+}
+
+
+void read_fs6122_filter(void) {
+  
+  Wire.beginTransmission(FS6122_SENSOR_ADDR);
+  Wire.write(0x8B);
+  Wire.endTransmission();
+  delay(1);
+  Wire.requestFrom(FS6122_SENSOR_ADDR, 1);
+
+  uint8_t val = Wire.read(); 
+  fs6122.filter = val;
+  Serial.print(F("Filter Depth: "));Serial.println(val);
+  // Wire.endTransmission();
+  // delay(20000);
+}
+
+
+void write_fs6122_filter(void) {
+  
+  // Wire.beginTransmission(FS6122_SENSOR_ADDR);
+  // Wire.write(0x0B);
+  // int status = Wire.endTransmission(false);
+  // Serial.println(status);
+  // delay(1);
+  // Wire.write(0x02);
+  // status = Wire.endTransmission();
+  // Serial.println(status);
+  // delay(1);
+
+  Wire.beginTransmission(FS6122_SENSOR_ADDR);
+  Wire.write(0x0B);
+  Wire.write(0xFE);
+  int status = Wire.endTransmission(false);
+  Serial.println(status);
+  delay(1);
+}
 #endif

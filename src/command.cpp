@@ -166,7 +166,7 @@ void limitValues()
         setpoint.reqPressure            = constrain(setpoint.reqPressure, minPressure, maxPressure);
     setpoint.reqVolume              = constrain(setpoint.reqVolume, minVolume, maxVolume);
     setpoint.reqI_E_Section         = constrain(setpoint.reqI_E_Section, 0, 2);
-    setpoint.flowTriggerSenstivity  = constrain(setpoint.flowTriggerSenstivity, -0.5, 5.0);    
+    setpoint.flowTriggerSenstivity  = constrain(setpoint.flowTriggerSenstivity, 0.5, 5.0);    
 }
 
 

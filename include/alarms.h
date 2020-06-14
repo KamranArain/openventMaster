@@ -2,19 +2,9 @@
 #define __ALARMS_H
 #include "header.h"
 
-
-// pins for testing
-#define BATTERY_ALARM           37
-#define CKT_INTEGRITY_ALARM     36
-#define OXYGEN_ALARM            35
-#define VENT_DIS_ALARM          34
-#define PRESSURE_DIS_ALARM      33
-#define MECHANICAL_INT_ALARM    32
-#define HOMING_NOT_DONE_ALARM   31
-#define HOURS_96_ALARM          30
-#define FLOW_SENSOR_DIS_ALARM   12
-#define O2_SENSOR_DIS_ALARM     13
-
+//Period in Seconds
+#define TIMER3_PERIOD 1
+extern uint16_t breathLength;
 
 // Define Priority of Alarms
 #define PEAK_ALARM_PRIORITY              1
@@ -35,33 +25,25 @@
 #define O2_SENSOR_DIS_ALARM_PRIORITY     16
 #define CKT_INTEGRITY_ALARM_PRIORITY     17
 
-// Snooze timeout values - Time in seconds
-#define TIMEOUT_BATTERY_ALARM           10
-#define TIMEOUT_CKT_INTEGRITY_ALARM     10
-#define TIMEOUT_OXYGEN_ALARM            10
-#define TIMEOUT_VENT_DIS_ALARM          10
-#define TIMEOUT_PRESSURE_DIS_ALARM      10
-#define TIMEOUT_MECHANICAL_INT_ALARM    10
-#define TIMEOUT_HOMING_NOT_DONE_ALARM   10
-#define TIMEOUT_HOURS_96_ALARM          10
-#define TIMEOUT_FLOW_SENSOR_DIS_ALARM   10
-#define TIMEOUT_O2_SENSOR_DIS_ALARM     10
-#define TIMEOUT_RR_RATE_ALARM           10
-#define TIMEOUT_PEAK_ALARM              10
-#define TIMEOUT_FIO2_ALARM              10
-#define TIMEOUT_TIDAL_VOLUME_ALARM      10
-#define TIMEOUT_MINUTE_VOLUME_ALARM     10
-#define TIMEOUT_PEEP_ALARM              10
-#define TIMEOUT_PLATEAU_PRESSURE_ALARM  10
+// Snooze timeout values - Time in seconds (multiple of Timer3 Period)
+#define TIMEOUT_BATTERY_ALARM           10/TIMER3_PERIOD
+#define TIMEOUT_CKT_INTEGRITY_ALARM     10/TIMER3_PERIOD
+#define TIMEOUT_OXYGEN_ALARM            10/TIMER3_PERIOD
+#define TIMEOUT_VENT_DIS_ALARM          10/TIMER3_PERIOD
+#define TIMEOUT_PRESSURE_DIS_ALARM      10/TIMER3_PERIOD
+#define TIMEOUT_MECHANICAL_INT_ALARM    10/TIMER3_PERIOD
+#define TIMEOUT_HOMING_NOT_DONE_ALARM   10/TIMER3_PERIOD
+#define TIMEOUT_HOURS_96_ALARM          10/TIMER3_PERIOD
+#define TIMEOUT_FLOW_SENSOR_DIS_ALARM   10/TIMER3_PERIOD
+#define TIMEOUT_O2_SENSOR_DIS_ALARM     10/TIMER3_PERIOD
+#define TIMEOUT_RR_RATE_ALARM           60/TIMER3_PERIOD
+#define TIMEOUT_PEAK_ALARM              10/TIMER3_PERIOD
+#define TIMEOUT_FIO2_ALARM              240/TIMER3_PERIOD
+#define TIMEOUT_TIDAL_VOLUME_ALARM      10/TIMER3_PERIOD
+#define TIMEOUT_MINUTE_VOLUME_ALARM     60/TIMER3_PERIOD
+#define TIMEOUT_PEEP_ALARM              10/TIMER3_PERIOD
+#define TIMEOUT_PLATEAU_PRESSURE_ALARM  10/TIMER3_PERIOD
 
-// Wait duration after values are out of range
-#define WAIT_MAX_RR                    5
-#define WAIT_MAX_PEAK                  5
-#define WAIT_MAX_FIO2                  5
-#define WAIT_MAX_TIDAL_VOL             5
-#define WAIT_MAX_MIN_VOLUME            5
-#define WAIT_MAX_PEEP                  5
-#define WAIT_MAX_PLATEAU               5
 
 // Used for showing sensor reading are high or low
 #define VALUE_HIGH                     true
@@ -71,15 +53,26 @@
 
 struct ALARMS
 {
+    // Wait duration after values are out of range
+    uint32_t WAIT_MAX_RR     =               ceil(1/TIMER3_PERIOD);
+    uint32_t WAIT_MAX_PEAK    =              ceil(3*breathLength/(TIMER3_PERIOD*1000));
+    // uint32_t WAIT_MAX_PEAK  =                12/TIMER3_PERIOD
+    uint32_t WAIT_MAX_FIO2      =            ceil(2*breathLength/(TIMER3_PERIOD*1000));
+    uint32_t WAIT_MAX_TIDAL_VOL  =           ceil(3*breathLength/(TIMER3_PERIOD*1000));
+    uint32_t WAIT_MAX_MIN_VOLUME  =          ceil(1/TIMER3_PERIOD);
+    uint32_t WAIT_MAX_PEEP         =         ceil(3*breathLength/(TIMER3_PERIOD*1000));
+    uint32_t WAIT_MAX_PLATEAU       =        ceil(3*breathLength/(TIMER3_PERIOD*1000));
+
+
     // Thresholds for checking sensor values
     const float THRESHOLD_RR                 =  1.0;
-    const float THRESHOLD_PEAK               =  5.0;
+    const float THRESHOLD_PEAK               =  8.0;
     const float THRESHOLD_FIO2               =  2.0;
     const float THRESHOLD_TIDAL_VOL          =  15.0;  // %
-    const float THRESHOLD_MIN_VOLUME         =  1.0;  //  %
-    const float THRESHOLD_PEEP_HIGH          =  21.0;
+    const float THRESHOLD_MIN_VOLUME         =  10.0;  //  %
+    const float THRESHOLD_PEEP_HIGH          =  16.0;
     const float THRESHOLD_PEEP_LOW           =  4.0;
-    const float THRESHOLD_HIGH_PLATEAU       =  2.0;
+    const float THRESHOLD_PLATEAU       =  2.0;
 
     // Sensor reading is High or Low
     bool Alarm_type_RR               = VALUE_LOW;
@@ -91,13 +84,13 @@ struct ALARMS
     bool Alarm_type_PLATEAU          = VALUE_LOW;
 
     // Wait counter
-    long Wait_count_RR            = 0;
-    long Wait_count_PEAK          = 0;
-    long Wait_count_FIO2          = 0;
-    long Wait_count_TIDAL_VOL     = 0;
-    long Wait_count_MIN_VOLUME    = 0;
-    long Wait_count_PEEP          = 0;
-    long Wait_count_PLATEAU       = 0;
+    uint32_t Wait_count_RR            = 0;
+    uint32_t Wait_count_PEAK          = 0;
+    uint32_t Wait_count_FIO2          = 0;
+    uint32_t Wait_count_TIDAL_VOL     = 0;
+    uint32_t Wait_count_MIN_VOLUME    = 0;
+    uint32_t Wait_count_PEEP          = 0;
+    uint32_t Wait_count_PLATEAU       = 0;
 
     bool Flag_init_RR            = true;
     bool Flag_init_PEAK          = true;
@@ -158,23 +151,23 @@ struct ALARMS
     bool Flag_Snooze_Plateau_alarm          = false;
 
     // Alarm timer counter
-    long Snooze_Count_battery_alarm         = 0;
-    long Snooze_Count_ckt_integrity_alarm   = 0;
-    long Snooze_Count_oxygen_alarm          = 0;
-    long Snooze_Count_vent_dis_alarm        = 0;
-    long Snooze_Count_pressure_dis_alarm    = 0;
-    long Snooze_Count_mech_int_alarm        = 0;
-    long Snooze_Count_homing_alarm          = 0;
-    long Snooze_Count_96hours_alarm         = 0;
-    long Snooze_Count_flow_sensor_dis_alarm = 0;
-    long Snooze_Count_O2_dis_alarm          = 0;
-    long Snooze_Count_RR_Rate_alarm         = 0;
-    long Snooze_Count_PEAK_alarm            = 0;
-    long Snooze_Count_FiO2_alarm            = 0;
-    long Snooze_Count_Tidal_volume_alarm    = 0;
-    long Snooze_Count_Minute_volume_alarm   = 0;
-    long Snooze_Count_peep_alarm            = 0;
-    long Snooze_Count_Plateau_alarm         = 0;
+    uint32_t Snooze_Count_battery_alarm         = 0;
+    uint32_t Snooze_Count_ckt_integrity_alarm   = 0;
+    uint32_t Snooze_Count_oxygen_alarm          = 0;
+    uint32_t Snooze_Count_vent_dis_alarm        = 0;
+    uint32_t Snooze_Count_pressure_dis_alarm    = 0;
+    uint32_t Snooze_Count_mech_int_alarm        = 0;
+    uint32_t Snooze_Count_homing_alarm          = 0;
+    uint32_t Snooze_Count_96hours_alarm         = 0;
+    uint32_t Snooze_Count_flow_sensor_dis_alarm = 0;
+    uint32_t Snooze_Count_O2_dis_alarm          = 0;
+    uint32_t Snooze_Count_RR_Rate_alarm         = 0;
+    uint32_t Snooze_Count_PEAK_alarm            = 0;
+    uint32_t Snooze_Count_FiO2_alarm            = 0;
+    uint32_t Snooze_Count_Tidal_volume_alarm    = 0;
+    uint32_t Snooze_Count_Minute_volume_alarm   = 0;
+    uint32_t Snooze_Count_peep_alarm            = 0;
+    uint32_t Snooze_Count_Plateau_alarm         = 0;
 
     bool Flag_alarm = false;
 
@@ -188,8 +181,8 @@ struct ALARMS
     float Sensor_val_FiO = 55.0;
     float Sensor_val_TV = defaultVolume;
     float Sensor_val_Min_vol = defaultVolume * defaultBPM;
-    float Sensor_PEEP = 15;
-    float Sensor_val_High_Plateau = defaultPressure;
+    float Sensor_val_PEEP = 15;
+    float Sensor_val_Plateau = defaultPressure;
 
     byte Error_status_byte_1 = 0;
     byte Error_status_byte_2 = 0;
@@ -198,6 +191,14 @@ struct ALARMS
 
     };
 
+    struct Buzzer
+    {
+    unsigned int action = SNOOZE_ALARM;
+    unsigned int toneFreq = SNOOZE_ALARM;
+    unsigned int timePeriod = SNOOZE_ALARM; //milliseconds
+    };
+
+void SetAlarmsWaitTimes();
 void alarmsSetup();
 void alarmControl();
 #endif

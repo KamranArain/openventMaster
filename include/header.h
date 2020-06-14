@@ -5,7 +5,7 @@
 
 #define CODE_VER_MAJOR 2
 #define CODE_VER_MINOR 7 //(Took hold time out of expiration, Homing Done moved to interrupt, Plateau Pressure and PEEP measurements moved to readsensors function)
-//#define QT_PLOTTER
+// #define QT_PLOTTER
 //************************   DEVICE OPERATIONAL PARAMETERS   ************************/
 /*
        WARNING : When changing min and max value, manually change the text in the SerialCommand procedure accordingly
@@ -22,20 +22,20 @@
 
 
 #define minBPM 8             // minimum respiratory speed
-#define defaultBPM 16        // default respiratory speed
+#define defaultBPM 20        // default respiratory speed
 #define maxBPM 35             // maximum respiratory speed
 #define minVolume 200         // minimum respiratory volume in milliliters
 #define defaultVolume 500     // default respiratory volume in milliliters
 #define maxVolume 500         // maximum respiratory volume in milliliters
 #define minPressure 0        // minimum compression for the ambu-bag in cmH2O
 #define minPressureCPAP 5        // minimum compression for the ambu-bag in cmH2O
-#define defaultPressure 15 // default compression for the ambu-bag in cmH2O
+#define defaultPressure 30 // default compression for the ambu-bag in cmH2O
 #define maxPressureCPAP 20     // maximum compression for the ambu-bag in cmH2O //approx 40cH20
 #define maxPressure 40     // maximum compression for the ambu-bag in cmH2O //approx 40cH20
 #define minWeight 2          // minimum compression for the ambu-bag in Pa
 #define maxWeight 150        // minimum compression for the ambu-bag in Pa
-#define defaultExpirationRatioIndex 1 //Corresponds to 1:2 see definition: IE_R_Value
-
+#define defaultExpirationRatioIndex 0 //Corresponds to 1:2 see definition: IE_R_Value
+#define defaultFIO2Index 0
 #define ADC_TO_VOLTS 0.004887585532746823 //0.004887585532746823 is from 5v/1023
 
 /*******************************   MOTOR PARAMETERS FOR STEPPER MOTOR   *******************************
@@ -63,12 +63,6 @@
 #define Beeper
 #endif
 
-#ifdef MS4525DO
-#define I2C_ADDRESS_MS4525DO 0x28 /**< 7-bit address. Depends on the order code (this is for code "I") */
-#endif
-
-
-
 #define RING_ALARM 1
 #define SNOOZE_ALARM 0
 
@@ -82,33 +76,8 @@
 #define SEVERITY_MED_TP 750
 #define SEVERITY_LOW_TP 1500
 
-//******************************   ERROR NUMBERS  ********************************
-#define BATTERY_IN_USE 1
-#define CIRCUIT_INTEGRITY_FAILED 2
-#define HIGH_RR 3
-#define HIGH_FIO2 4
-#define HIGH_PEEP 5
-#define HIGH_PLT 6
-#define HIGH_PIP 7
-#define LOW_PIP 8
-#define LOW_FIO2 9
-#define LOW_PEEP 10
-#define LOW_PLT 11
-#define OXYGEN_FAILURE 12
-#define LOW_TV 13
-#define HIGH_TV 14
-#define START_SWT_ERROR 15
-#define LOW_MV 16
-#define HIGH_MV 17
-#define VENT_CKT_DC 18
-#define MECH_INTEGRITY_FAILED 19
-#define HOMING_NOT_DONE_ERROR 20
-#define OPS_96_HRS 21
-#define FLOW_SENSOR_DISCONNECTED 22
-#define PRESSURE_SENSOR_DISCONNECTED 23
-#define O2_SENSOR_DISCONNECTED 24
-
 //******************************   MACROS  ********************************
+#define HOMING_PERIOD 100
 
 #define WAIT_PHASE 0
 #define INSPIRATION_PHASE 1
@@ -137,19 +106,6 @@
 #define VENT_MODE_AC_PCV    3
 #define VENT_MODE_CPAP      4
 
-/**********Pressure sensors parameters*************/
-#define BMP180_IN_USE 1
-#define BMP280_IN_USE 2
-
-#define MPXV7002DP_IN_USE 0
-#define MPX2010D_IN_USE 1
-#define MPX10DP_IN_USE 2
-#define MS4525_IN_USE 3
-
-#define K 520 //constant cofficent for flow rate q
-#define P_min -1.0f
-#define P_max 1.0f
-#define PSI_to_Pa 6894.757f
 /***************end***********************/
 
 
@@ -163,30 +119,31 @@
 //#define MPX_IN A4
 
 #ifdef Led
-#define pin_LED1 22
+#define pin_LED1 48
 #endif
 
 // #define pin_Button_OK 42
-#define pin_Switch_START 44
+#define pin_Switch_START 28
 // #define pin_Switch_MODE 45
-#define pin_SNOOZBTN         43
+#define pin_SNOOZBTN         3
 #define pin_BUZZER           37
-#define pins_KEYPAD ((PINA & 0xF0) >> 4)
+// #define pins_KEYPAD ((PINA & 0xF0) >> 4)
+#define pins_KEYPAD (PINA & 0x0F)
 #define pin_KEYPAD_INTERRUPT 2
 
-#define pin_Knob_1 A12 //VR1 // I/E Ratio
-#define pin_Knob_2 A13 //VR2 // BPM
-#define pin_Knob_3 A14 //VR3 // Tidal Volume
-#define pin_Knob_4 A15 //VR4 // Max Pressure
+// #define pin_Knob_1 A12 //VR1 // I/E Ratio
+// #define pin_Knob_2 A13 //VR2 // BPM
+// #define pin_Knob_3 A14 //VR3 // Tidal Volume
+// #define pin_Knob_4 A15 //VR4 // Max Pressure
 
 //#define pin_LmtSWT_OP1 46 //HOME POSITION
 //#define pin_LmtSWT_OP2 47
-#define pin_LmtSWT_CL1 48
-#define pin_LmtSWT_CL2 49
+// #define pin_LmtSWT_CL1 48
+// #define pin_LmtSWT_CL2 49
 
-#define pin_SLAVE_RESET 3
+#define pin_SLAVE_RESET 31
 
-#define pin_M1_POT A11 //VR5
+// #define pin_M1_POT A11 //VR5
 
 #define SERIAL_BAUD 115200 // Serial port communication speed
 
@@ -238,14 +195,8 @@ void Timer1ISR();
 
 void selfTest();
 void calibrate(int calibParam);
-void readSensors();
 void Monitoring();
-void alarmControlOld();
 void Ventilator_Control();
-
-#ifdef Beeper
-void beep();
-#endif
 
 #ifdef TX_SERIAL_TELEMETRY
 void GetTelData();
@@ -258,21 +209,7 @@ void eeget();
 void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String dir="0");
 void decodeSlaveTel();
 void receiveSlaveTel();
-void checkSensorHealth();
 //***************************************   END   ***************************************
-
-struct P_Sensor
-{
-  float bmp_pressure = 0,
-        bmp_temperature = 0;
-  float diff_press_PSI = 0,    //differential pressure from sensor in psi
-      diff_press_pa = 0,       //differential pressure form sensor in pa
-      q = 0;                   //flow rate in lit/min
-  float pressure_gauge = 0;    // Pressure from the sensor in Pa
-  float pressure_gauge_CM = 0; // Pressure from the sensor in cmH2O
-  uint8_t connectionStatus = 255;
-  uint8_t sensorHealth = HEALTH_BAD;
-};
 
 struct setpointStatus
 {
@@ -301,13 +238,6 @@ struct setpointStatus
   uint8_t patientWeight = 70; //kg
 };
 
-struct Buzzer
-{
-  unsigned int action = SNOOZE_ALARM;
-  unsigned int toneFreq = SNOOZE_ALARM;
-  unsigned int timePeriod = SNOOZE_ALARM; //milliseconds
-};
-
 struct TidalVolume
 {
   float measured = 0.0;
@@ -331,10 +261,18 @@ struct STATUS_FLAGS
   bool flowSensorFailure = false;
   bool presSensorFailure = false;
   bool o2SensorFailure = false;
+  bool compressionMechFailure = false;
   bool systemReset = true;
 
   bool PeepValid = false;
   bool PltPrsValid = false;
+  bool PeakPrsValid = false;
+  bool TidalVolValid = false;
+  bool MinVolValid = false;
+  bool RRValid = false;
+  bool FIO2Valid = false;
+  bool ventCktDisconnectedValid = false;
+
   bool  homeAtBadSensor = false;
   bool  homeAtBadFlowSensor = false;
   bool  homeAtBadPressSensor = false;
@@ -358,6 +296,11 @@ float plateauPressure, /* Plateau pressure is the pressure that is applied by th
       PEEPressure,       // Positive end-expiratory pressure (PEEP)
       peakInspPressure;      // high pass filtered value of the pressure. Used to detect patient initiated breathing cycles
 uint8_t measuredRR = 0;
+unsigned long RR_timestamp = 0;
+unsigned long MV_timestamp = 0;
+unsigned long TV_timestamp = 0;
+unsigned long PR_timestamp = 0;
+unsigned long CV_timestamp = 0;
 };
 
 struct Slave

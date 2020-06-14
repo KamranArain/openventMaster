@@ -1,23 +1,31 @@
 #include <Arduino.h>
 #include "alarms.h"
+#include "sensors.h"
 #include "userInterface.h"
 #include "TimerThree.h"
 
 
 extern bool key_int_flag;
-extern uint8_t   Set_Param_vMode;
-extern uint8_t   Set_Param_vMode;
 
 extern uint8_t   FiO2_Value[4][2];
 
+extern uint16_t breathLength;
+
 extern struct STATUS_FLAGS status;
 extern struct setpointStatus setpoint;
+extern struct MONITORING_PARAMS monitoring;
+extern struct TidalVolume TV;
+extern struct O2_Sensor O2;
 
 struct ALARMS Alarms;
+#ifdef Beeper
+struct Buzzer buzzer;
+#endif
+
 
 // for testing
 uint8_t Set_Param_PEEP = 0;
-
+int LED_STATE = HIGH;
 
 void timer3Isr();
 void Snooze_alarm();
@@ -25,194 +33,235 @@ void CheckSensorData(void);
 void CheckAlarms(void);
 void AlarmsGen(void);
 void AlarmsTelemetry(void);
+#ifdef Beeper //Function Needs Revision
+void beep();
+#endif
 
 void CheckSensorData(void)
 {
-  // Check RR
-  if(Alarms.Sensor_val_RR >  (float) setpoint.curBPM + Alarms.THRESHOLD_RR)
-  {
-    if(Alarms.Flag_init_RR)
-    {
-      Alarms.Alarm_type_RR = VALUE_HIGH;
-      Alarms.Flag_init_RR = false;
-      Alarms.Wait_count_RR = 0;
-    }
-  }
-  else if(Alarms.Sensor_val_RR < (float) setpoint.curBPM - Alarms.THRESHOLD_RR)
-  {
-    if(Alarms.Flag_init_RR)
-    {
-      Alarms.Alarm_type_RR = VALUE_LOW;
-      Alarms.Flag_init_RR = false;
-      Alarms.Wait_count_RR = 0;
-    }
-  }
-  else
-  {
-    Alarms.Flag_init_RR = true;
-    Alarms.Flag_RR_Rate_alarm = 1;
-  }
 
-  // Check Tidal Volume
-  if(Alarms.Sensor_val_TV > (float) setpoint.curVolume + ((Alarms.THRESHOLD_TIDAL_VOL/100.0) * (float) setpoint.curVolume)   && ( Set_Param_vMode == VENT_MODE_VCV || Set_Param_vMode == VENT_MODE_AC_VCV) )
-  {
-    if(Alarms.Flag_init_TIDAL_VOL)
+    // Check FiO2
+    if((Alarms.Sensor_val_FiO > ((float) FiO2_Value[setpoint.curFiO2][1] + Alarms.THRESHOLD_FIO2)) && status.FIO2Valid)
     {
-      Alarms.Alarm_type_TIDAL_VOL = VALUE_HIGH;
-      Alarms.Flag_init_TIDAL_VOL = false;
-      Alarms.Wait_count_TIDAL_VOL = 0;
+        if(Alarms.Flag_init_FIO2)
+        {
+          Alarms.Alarm_type_FIO2 = VALUE_HIGH;
+          Alarms.Flag_init_FIO2 = false;
+          Alarms.Wait_count_FIO2 = 0;
+        }
     }
-  }
-  else if(Alarms.Sensor_val_TV < (float) setpoint.curVolume - ((Alarms.THRESHOLD_TIDAL_VOL/100.0) * (float) setpoint.curVolume)   && ( Set_Param_vMode == VENT_MODE_VCV || Set_Param_vMode == VENT_MODE_AC_VCV) )
-  {
-    if(Alarms.Flag_init_TIDAL_VOL)
+    else if((Alarms.Sensor_val_FiO < ((float) FiO2_Value[setpoint.curFiO2][0] - Alarms.THRESHOLD_FIO2)) && status.FIO2Valid)
     {
-      Alarms.Alarm_type_TIDAL_VOL = VALUE_LOW;
-      Alarms.Flag_init_TIDAL_VOL = false;
-      Alarms.Wait_count_TIDAL_VOL = 0;
+        if(Alarms.Flag_init_FIO2)
+        {
+          Alarms.Alarm_type_FIO2 = VALUE_LOW;
+          Alarms.Flag_init_FIO2 = false;
+          Alarms.Wait_count_FIO2 = 0;
+        }
     }
-  }
-  else
-  {
-    Alarms.Flag_init_TIDAL_VOL = true;
-    Alarms.Flag_Tidal_volume_alarm = 1;
-  }
-    
-  // Check Peak inspiratory pressure
-  if(Alarms.Sensor_val_PEAK > (float) setpoint.curPressure + Alarms.THRESHOLD_PEAK )  
-  {
-    if(Alarms.Flag_init_PEAK)
+    else
     {
-      Alarms.Alarm_type_PEAK = VALUE_HIGH;
-      Alarms.Flag_init_PEAK = false;
-      Alarms.Wait_count_PEAK = 0;
+      Alarms.Flag_init_FIO2 = true;
+      Alarms.Flag_FiO2_alarm = 1;
     }
-  }
-  else if(Alarms.Sensor_val_PEAK < (float) setpoint.curPressure - Alarms.THRESHOLD_PEAK  && ( Set_Param_vMode == VENT_MODE_PCV || Set_Param_vMode == VENT_MODE_AC_PCV) )
-  {
-    if(Alarms.Flag_init_PEAK)
-    {
-      Alarms.Alarm_type_PEAK = VALUE_LOW;
-      Alarms.Flag_init_PEAK = false;
-      Alarms.Wait_count_PEAK = 0;
-    }
-  }
-  else
-  {
-    Alarms.Flag_init_PEAK = true;
-    Alarms.Flag_PEAK_alarm = 1;
-  }
 
-  // Check FiO2
-  if(Alarms.Sensor_val_FiO > (float) FiO2_Value[setpoint.curFiO2][1] + Alarms.THRESHOLD_FIO2)
-  {
-      if(Alarms.Flag_init_FIO2)
-      {
-        Alarms.Alarm_type_FIO2 = VALUE_HIGH;
-        Alarms.Flag_init_FIO2 = false;
-        Alarms.Wait_count_FIO2 = 0;
-      }
-  }
-  else if(Alarms.Sensor_val_FiO < (float) FiO2_Value[setpoint.curFiO2][0] - Alarms.THRESHOLD_FIO2)
-  {
-      if(Alarms.Flag_init_FIO2)
-      {
-        Alarms.Alarm_type_FIO2 = VALUE_LOW;
-        Alarms.Flag_init_FIO2 = false;
-        Alarms.Wait_count_FIO2 = 0;
-      }
-  }
-  else
-  {
-    Alarms.Flag_init_FIO2 = true;
-    Alarms.Flag_FiO2_alarm = 1;
-  }
+  if (status.VentilatorOperationON) {
+    // Check RR
+    if((Alarms.Sensor_val_RR >  ((float) setpoint.curBPM + Alarms.THRESHOLD_RR)) && status.RRValid)
+    {
 
-  // check Minute Volume 
-  if(Alarms.Sensor_val_Min_vol >  ((float) setpoint.curBPM * (float) setpoint.curVolume) + ((Alarms.THRESHOLD_MIN_VOLUME/100.0) * ((float) setpoint.curBPM * (float) setpoint.curVolume)) && ( Set_Param_vMode == VENT_MODE_VCV || Set_Param_vMode == VENT_MODE_AC_VCV) )
-  {
-      if(Alarms.Flag_init_MIN_VOLUME)
-      {
-        Alarms.Alarm_type_MIN_VOLUME = VALUE_HIGH;
-        Alarms.Flag_init_MIN_VOLUME = false;
-        Alarms.Wait_count_MIN_VOLUME = 0;
-      }
-  }
-  else if(Alarms.Sensor_val_Min_vol < ((float) setpoint.curBPM * (float) setpoint.curVolume) - ((Alarms.THRESHOLD_MIN_VOLUME/100.0) * ((float) setpoint.curBPM * (float) setpoint.curVolume)) && ( Set_Param_vMode == VENT_MODE_VCV || Set_Param_vMode == VENT_MODE_AC_VCV) )
-  {
-      if(Alarms.Flag_init_MIN_VOLUME)
-      {
-        Alarms.Alarm_type_MIN_VOLUME = VALUE_LOW;
-        Alarms.Flag_init_MIN_VOLUME = false;
-        Alarms.Wait_count_MIN_VOLUME = 0;
-      }
-  }
-  else
-  {
-    Alarms.Flag_init_MIN_VOLUME = true;
-    Alarms.Flag_Minute_volume_alarm = 1;
-  }
+      // if (!Alarms.Flag_init_RR && Alarms.Alarm_type_RR == VALUE_LOW)
+      // {
+      //   Alarms.Flag_init_RR = true;
+      // }
 
-// check PEEP 
-  if(Alarms.Sensor_PEEP >= (float) Set_Param_PEEP + Alarms.THRESHOLD_PEEP_HIGH )
-  {
-      if(Alarms.Flag_init_PEEP)
+      if(Alarms.Flag_init_RR)
       {
-        Alarms.Alarm_type_PEEP = VALUE_HIGH;
-        Alarms.Flag_init_PEEP = false;
-        Alarms.Wait_count_PEEP = 0;
+        Alarms.Alarm_type_RR = VALUE_HIGH;
+        Alarms.Flag_init_RR = false;
+        Alarms.Wait_count_RR = 0;
       }
-  }
-  else if(Alarms.Sensor_PEEP <= (float) Set_Param_PEEP - Alarms.THRESHOLD_PEEP_LOW )
-  {
-      if(Alarms.Flag_init_PEEP)
+    }
+    else if((Alarms.Sensor_val_RR < ((float) setpoint.curBPM - Alarms.THRESHOLD_RR)) && status.RRValid)
+    {
+      // if (!Alarms.Flag_init_RR && Alarms.Alarm_type_RR == VALUE_HIGH)
+      // {
+      //   Alarms.Flag_init_RR = true;
+      // }
+
+      if(Alarms.Flag_init_RR)
       {
-          Alarms.Alarm_type_PEEP = VALUE_LOW;
+        Alarms.Alarm_type_RR = VALUE_LOW;
+        Alarms.Flag_init_RR = false;
+        Alarms.Wait_count_RR = 0;
+      }
+    }
+    else
+    {
+      Alarms.Flag_init_RR = true;
+      Alarms.Flag_RR_Rate_alarm = 1;
+    }
+
+    // Check Tidal Volume
+    if(Alarms.Sensor_val_TV > (float) setpoint.curVolume + ((Alarms.THRESHOLD_TIDAL_VOL/100.0) * (float) setpoint.curVolume)   && ( setpoint.curVentMode == VENT_MODE_VCV || setpoint.curVentMode == VENT_MODE_AC_VCV) && status.TidalVolValid)
+    {
+      if(Alarms.Flag_init_TIDAL_VOL)
+      {
+        Alarms.Alarm_type_TIDAL_VOL = VALUE_HIGH;
+        Alarms.Flag_init_TIDAL_VOL = false;
+        Alarms.Wait_count_TIDAL_VOL = 0;
+      }
+    }
+    else if(Alarms.Sensor_val_TV < (float) setpoint.curVolume - ((Alarms.THRESHOLD_TIDAL_VOL/100.0) * (float) setpoint.curVolume)   && ( setpoint.curVentMode == VENT_MODE_VCV || setpoint.curVentMode == VENT_MODE_AC_VCV) && status.TidalVolValid)
+    {
+      if(Alarms.Flag_init_TIDAL_VOL)
+      {
+        Alarms.Alarm_type_TIDAL_VOL = VALUE_LOW;
+        Alarms.Flag_init_TIDAL_VOL = false;
+        Alarms.Wait_count_TIDAL_VOL = 0;
+      }
+    }
+    else
+    {
+      Alarms.Flag_init_TIDAL_VOL = true;
+      Alarms.Flag_Tidal_volume_alarm = 1;
+    }
+      
+    // Check Peak inspiratory pressure
+    if((Alarms.Sensor_val_PEAK > ((float) setpoint.curPressure + Alarms.THRESHOLD_PEAK) ) && status.PeakPrsValid)
+    {
+      if(Alarms.Flag_init_PEAK)
+      {
+        Alarms.Alarm_type_PEAK = VALUE_HIGH;
+        Alarms.Flag_init_PEAK = false;
+        Alarms.Wait_count_PEAK = 0;
+      }
+    }
+    else if(Alarms.Sensor_val_PEAK < (float) setpoint.curPressure - Alarms.THRESHOLD_PEAK  && ( setpoint.curVentMode == VENT_MODE_PCV || setpoint.curVentMode == VENT_MODE_AC_PCV) && status.PeakPrsValid)
+    {
+      if(Alarms.Flag_init_PEAK)
+      {
+        Alarms.Alarm_type_PEAK = VALUE_LOW;
+        Alarms.Flag_init_PEAK = false;
+        Alarms.Wait_count_PEAK = 0;
+      }
+    }
+    else
+    {
+      Alarms.Flag_init_PEAK = true;
+      Alarms.Flag_PEAK_alarm = 1;
+    }
+
+    // check Minute Volume 
+    if(Alarms.Sensor_val_Min_vol >  ((float) setpoint.curBPM * (float) setpoint.curVolume) + ((Alarms.THRESHOLD_MIN_VOLUME/100.0) * ((float) setpoint.curBPM * (float) setpoint.curVolume)) && ( setpoint.curVentMode == VENT_MODE_VCV || setpoint.curVentMode == VENT_MODE_AC_VCV) && status.MinVolValid)
+    {
+        if(Alarms.Flag_init_MIN_VOLUME)
+        {
+          Alarms.Alarm_type_MIN_VOLUME = VALUE_HIGH;
+          Alarms.Flag_init_MIN_VOLUME = false;
+          Alarms.Wait_count_MIN_VOLUME = 0;
+        }
+    }
+    else if(Alarms.Sensor_val_Min_vol < ((float) setpoint.curBPM * (float) setpoint.curVolume) - ((Alarms.THRESHOLD_MIN_VOLUME/100.0) * ((float) setpoint.curBPM * (float) setpoint.curVolume)) && ( setpoint.curVentMode == VENT_MODE_VCV || setpoint.curVentMode == VENT_MODE_AC_VCV) && status.MinVolValid)
+    {
+        if(Alarms.Flag_init_MIN_VOLUME)
+        {
+          Alarms.Alarm_type_MIN_VOLUME = VALUE_LOW;
+          Alarms.Flag_init_MIN_VOLUME = false;
+          Alarms.Wait_count_MIN_VOLUME = 0;
+        }
+    }
+    else
+    {
+      Alarms.Flag_init_MIN_VOLUME = true;
+      Alarms.Flag_Minute_volume_alarm = 1;
+    }
+
+  // check PEEP 
+    if((Alarms.Sensor_val_PEEP >= Alarms.THRESHOLD_PEEP_HIGH) && status.PeepValid)
+    {
+        if(Alarms.Flag_init_PEEP)
+        {
+          Alarms.Alarm_type_PEEP = VALUE_HIGH;
           Alarms.Flag_init_PEEP = false;
           Alarms.Wait_count_PEEP = 0;
-      }
-  }
-  else
-  {
-    Alarms.Flag_init_PEEP = true;
-    Alarms.Flag_peep_alarm = 1;
-  }
+        }
+    }
+    else if((Alarms.Sensor_val_PEEP <= Alarms.THRESHOLD_PEEP_LOW) && status.PeepValid)
+    {
+        if(Alarms.Flag_init_PEEP)
+        {
+            Alarms.Alarm_type_PEEP = VALUE_LOW;
+            Alarms.Flag_init_PEEP = false;
+            Alarms.Wait_count_PEEP = 0;
+        }
+    }
+    else
+    {
+      Alarms.Flag_init_PEEP = true;
+      Alarms.Flag_peep_alarm = 1;
+    }
 
-  // check High Plateau Pressure 
-  if(Alarms.Sensor_val_High_Plateau > (float) setpoint.curPressure + Alarms.THRESHOLD_HIGH_PLATEAU )
-  {
-      if(Alarms.Flag_init_PLATEAU)
-      {
-        Alarms.Alarm_type_PLATEAU = VALUE_HIGH;
-        Alarms.Flag_init_PLATEAU = false;
-        Alarms.Wait_count_PLATEAU = 0;
-      }
-  }
-  else if(Alarms.Sensor_val_High_Plateau < (float) setpoint.curPressure - Alarms.THRESHOLD_HIGH_PLATEAU && ( Set_Param_vMode == VENT_MODE_PCV || Set_Param_vMode == VENT_MODE_AC_PCV) )
-  {
-      if(Alarms.Flag_init_PLATEAU)
-      {
-          Alarms.Alarm_type_PLATEAU = VALUE_LOW;
+    // check High Plateau Pressure 
+    if((Alarms.Sensor_val_Plateau > ((float) setpoint.curPressure + Alarms.THRESHOLD_PLATEAU)) && status.PltPrsValid )
+    {
+        if(Alarms.Flag_init_PLATEAU)
+        {
+          Alarms.Alarm_type_PLATEAU = VALUE_HIGH;
           Alarms.Flag_init_PLATEAU = false;
           Alarms.Wait_count_PLATEAU = 0;
-      }
+        }
+    }
+    else if(Alarms.Sensor_val_Plateau < (float) setpoint.curPressure - Alarms.THRESHOLD_PLATEAU && ( setpoint.curVentMode == VENT_MODE_PCV || setpoint.curVentMode == VENT_MODE_AC_PCV) && status.PltPrsValid )
+    {
+        if(Alarms.Flag_init_PLATEAU)
+        {
+            Alarms.Alarm_type_PLATEAU = VALUE_LOW;
+            Alarms.Flag_init_PLATEAU = false;
+            Alarms.Wait_count_PLATEAU = 0;
+        }
+    }
+    else
+    {
+      Alarms.Flag_init_PLATEAU = true;
+      Alarms.Flag_Plateau_alarm = 1;
+    }
   }
-  else
-  {
-    Alarms.Flag_init_PLATEAU = true;
-    Alarms.Flag_Plateau_alarm = 1;
+  else {
+//      Alarms.Flag_init_FIO2 = true;
+//      Alarms.Wait_count_FIO2 = 0;
+//      status.FIO2Valid = false;
+
+      Alarms.Flag_init_RR = true;
+      Alarms.Wait_count_RR = 0;
+
+      Alarms.Flag_init_TIDAL_VOL = true;
+      Alarms.Wait_count_TIDAL_VOL = 0;
+
+      Alarms.Flag_init_MIN_VOLUME = true;
+      Alarms.Wait_count_MIN_VOLUME = 0;
+
+      Alarms.Flag_init_PEAK = true;
+      Alarms.Wait_count_PEAK = 0;
+
+      Alarms.Flag_init_PEEP = true;
+      Alarms.Wait_count_PEEP = 0;
+
+      Alarms.Flag_init_PLATEAU = true;
+      Alarms.Wait_count_PLATEAU = 0;      
   }
 
 }
 
 void timer3Isr()
 {
-   
+   digitalWrite(pin_LED1, LED_STATE);
+   LED_STATE = !LED_STATE;
   // delay logic for sensor readings
   if(!Alarms.Flag_init_RR)
   {
     Alarms.Wait_count_RR++;
-    if( Alarms.Wait_count_RR > WAIT_MAX_RR)
+    if( Alarms.Wait_count_RR > (uint32_t)Alarms.WAIT_MAX_RR)
     {
       Alarms.Flag_init_RR = true;
       Alarms.Flag_RR_Rate_alarm = 0;
@@ -222,7 +271,7 @@ void timer3Isr()
   if(!Alarms.Flag_init_PEAK)
   {
     Alarms.Wait_count_PEAK++;
-    if( Alarms.Wait_count_PEAK > WAIT_MAX_PEAK)
+    if( Alarms.Wait_count_PEAK > (uint32_t)Alarms.WAIT_MAX_PEAK)
     {
       Alarms.Flag_init_PEAK = true;
       Alarms.Flag_PEAK_alarm = 0;
@@ -232,7 +281,7 @@ void timer3Isr()
   if(!Alarms.Flag_init_TIDAL_VOL)
   {
     Alarms.Wait_count_TIDAL_VOL++;
-    if( Alarms.Wait_count_TIDAL_VOL > WAIT_MAX_TIDAL_VOL)
+    if( Alarms.Wait_count_TIDAL_VOL > (uint32_t)Alarms.WAIT_MAX_TIDAL_VOL)
     {
       Alarms.Flag_init_TIDAL_VOL = true;
       Alarms.Flag_Tidal_volume_alarm = 0;
@@ -242,7 +291,7 @@ void timer3Isr()
   if(!Alarms.Flag_init_FIO2)
   {
     Alarms.Wait_count_FIO2++;
-    if( Alarms.Wait_count_FIO2 > WAIT_MAX_FIO2)
+    if( Alarms.Wait_count_FIO2 > (uint32_t)Alarms.WAIT_MAX_FIO2)
     {
       Alarms.Flag_init_FIO2 = true;
       Alarms.Flag_FiO2_alarm = 0;
@@ -252,7 +301,7 @@ void timer3Isr()
   if(!Alarms.Flag_init_MIN_VOLUME)
   {
     Alarms.Wait_count_MIN_VOLUME++;
-    if( Alarms.Wait_count_MIN_VOLUME > WAIT_MAX_MIN_VOLUME)
+    if( Alarms.Wait_count_MIN_VOLUME > (uint32_t)Alarms.WAIT_MAX_MIN_VOLUME)
     {
       Alarms.Flag_init_MIN_VOLUME = true;
       Alarms.Flag_Minute_volume_alarm = 0;
@@ -262,8 +311,9 @@ void timer3Isr()
   if(!Alarms.Flag_init_PEEP)
   {
     Alarms.Wait_count_PEEP++;
-    if( Alarms.Wait_count_PEEP > WAIT_MAX_PEEP)
+    if( Alarms.Wait_count_PEEP > (uint32_t)Alarms.WAIT_MAX_PEEP)
     {
+      // Serial.println("PEEP ALARM 1");
       Alarms.Flag_init_PEEP = true;
       Alarms.Flag_peep_alarm = 0;
     }
@@ -272,7 +322,7 @@ void timer3Isr()
   if(!Alarms.Flag_init_PLATEAU)
   {
     Alarms.Wait_count_PLATEAU++;
-    if( Alarms.Wait_count_PLATEAU > WAIT_MAX_PLATEAU)
+    if( Alarms.Wait_count_PLATEAU > (uint32_t)Alarms.WAIT_MAX_PLATEAU)
     {
       Alarms.Flag_init_PLATEAU = true;
       Alarms.Flag_Plateau_alarm = 0;
@@ -283,7 +333,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_battery_alarm)
   {
       Alarms.Snooze_Count_battery_alarm++;
-      if( Alarms.Snooze_Count_battery_alarm > TIMEOUT_BATTERY_ALARM)
+      if( Alarms.Snooze_Count_battery_alarm > (uint32_t)TIMEOUT_BATTERY_ALARM)
       {
           Alarms.Flag_Snooze_battery_alarm = false;
       }
@@ -292,7 +342,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_ckt_integrity_alarm)
   {
       Alarms.Snooze_Count_ckt_integrity_alarm++;
-      if( Alarms.Snooze_Count_ckt_integrity_alarm > TIMEOUT_CKT_INTEGRITY_ALARM)
+      if( Alarms.Snooze_Count_ckt_integrity_alarm > (uint32_t)TIMEOUT_CKT_INTEGRITY_ALARM)
       {
           Alarms.Flag_Snooze_ckt_integrity_alarm = false;
       }
@@ -301,7 +351,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_oxygen_alarm)
   {
       Alarms.Snooze_Count_oxygen_alarm++;
-      if( Alarms.Snooze_Count_oxygen_alarm > TIMEOUT_OXYGEN_ALARM)
+      if( Alarms.Snooze_Count_oxygen_alarm > (uint32_t)TIMEOUT_OXYGEN_ALARM)
       {
           Alarms.Flag_Snooze_oxygen_alarm = false;
       }
@@ -310,7 +360,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_vent_dis_alarm)
   {
       Alarms.Snooze_Count_vent_dis_alarm++;
-      if( Alarms.Snooze_Count_vent_dis_alarm > TIMEOUT_VENT_DIS_ALARM)
+      if( Alarms.Snooze_Count_vent_dis_alarm > (uint32_t)TIMEOUT_VENT_DIS_ALARM)
       {
           Alarms.Flag_Snooze_vent_dis_alarm = false;
       }
@@ -319,7 +369,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_pressure_dis_alarm)
   {
       Alarms.Snooze_Count_pressure_dis_alarm++;
-      if( Alarms.Snooze_Count_pressure_dis_alarm > TIMEOUT_PRESSURE_DIS_ALARM)
+      if( Alarms.Snooze_Count_pressure_dis_alarm > (uint32_t)TIMEOUT_PRESSURE_DIS_ALARM)
       {
           Alarms.Flag_Snooze_pressure_dis_alarm = false;
       }
@@ -328,7 +378,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_mech_int_alarm)
   {
       Alarms.Snooze_Count_mech_int_alarm++;
-      if( Alarms.Snooze_Count_mech_int_alarm > TIMEOUT_MECHANICAL_INT_ALARM)
+      if( Alarms.Snooze_Count_mech_int_alarm > (uint32_t)TIMEOUT_MECHANICAL_INT_ALARM)
       {
           Alarms.Flag_Snooze_mech_int_alarm = false;
       }
@@ -337,7 +387,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_homing_alarm)
   {
       Alarms.Snooze_Count_homing_alarm++;
-      if( Alarms.Snooze_Count_homing_alarm > TIMEOUT_HOMING_NOT_DONE_ALARM)
+      if( Alarms.Snooze_Count_homing_alarm > (uint32_t)TIMEOUT_HOMING_NOT_DONE_ALARM)
       {
           Alarms.Flag_Snooze_homing_alarm = false;
       }
@@ -346,7 +396,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_96hours_alarm)
   {
       Alarms.Snooze_Count_96hours_alarm++;
-      if( Alarms.Snooze_Count_96hours_alarm > TIMEOUT_HOURS_96_ALARM)
+      if( Alarms.Snooze_Count_96hours_alarm > (uint32_t)TIMEOUT_HOURS_96_ALARM)
       {
           Alarms.Flag_Snooze_96hours_alarm = false;
       }
@@ -355,7 +405,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_flow_sensor_dis_alarm)
   {
       Alarms.Snooze_Count_flow_sensor_dis_alarm++;
-      if( Alarms.Snooze_Count_flow_sensor_dis_alarm > TIMEOUT_FLOW_SENSOR_DIS_ALARM)
+      if( Alarms.Snooze_Count_flow_sensor_dis_alarm > (uint32_t)TIMEOUT_FLOW_SENSOR_DIS_ALARM)
       {
           Alarms.Flag_Snooze_flow_sensor_dis_alarm = false;
       }
@@ -364,7 +414,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_O2_dis_alarm)
   {
       Alarms.Snooze_Count_O2_dis_alarm++;
-      if( Alarms.Snooze_Count_O2_dis_alarm > TIMEOUT_O2_SENSOR_DIS_ALARM)
+      if( Alarms.Snooze_Count_O2_dis_alarm > (uint32_t)TIMEOUT_O2_SENSOR_DIS_ALARM)
       {
           Alarms.Flag_Snooze_O2_dis_alarm = false;
       }
@@ -373,7 +423,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_RR_Rate_alarm)
   {
       Alarms.Snooze_Count_RR_Rate_alarm++;
-      if( Alarms.Snooze_Count_RR_Rate_alarm > TIMEOUT_RR_RATE_ALARM)
+      if( Alarms.Snooze_Count_RR_Rate_alarm > (uint32_t)TIMEOUT_RR_RATE_ALARM)
       {
           Alarms.Flag_Snooze_RR_Rate_alarm = false;
       }
@@ -381,7 +431,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_PEAK_alarm)
   {
       Alarms.Snooze_Count_PEAK_alarm++;
-      if( Alarms.Snooze_Count_PEAK_alarm > TIMEOUT_PEAK_ALARM)
+      if( Alarms.Snooze_Count_PEAK_alarm > (uint32_t)TIMEOUT_PEAK_ALARM)
       {
           Alarms.Flag_Snooze_PEAK_alarm = false;
       }
@@ -389,7 +439,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_FiO2_alarm)
   {
       Alarms.Snooze_Count_FiO2_alarm++;
-      if( Alarms.Snooze_Count_FiO2_alarm > TIMEOUT_FIO2_ALARM)
+      if( Alarms.Snooze_Count_FiO2_alarm > (uint32_t)TIMEOUT_FIO2_ALARM)
       {
           Alarms.Flag_Snooze_FiO2_alarm = false;
       }
@@ -397,7 +447,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_Tidal_volume_alarm)
   {
       Alarms.Snooze_Count_Tidal_volume_alarm++;
-      if( Alarms.Snooze_Count_Tidal_volume_alarm > TIMEOUT_TIDAL_VOLUME_ALARM)
+      if( Alarms.Snooze_Count_Tidal_volume_alarm > (uint32_t)TIMEOUT_TIDAL_VOLUME_ALARM)
       {
           Alarms.Flag_Snooze_Tidal_volume_alarm = false;
       }
@@ -413,7 +463,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_peep_alarm)
   {
       Alarms.Snooze_Count_peep_alarm++;
-      if( Alarms.Snooze_Count_peep_alarm > TIMEOUT_PEEP_ALARM)
+      if( Alarms.Snooze_Count_peep_alarm > (uint32_t)TIMEOUT_PEEP_ALARM)
       {
           Alarms.Flag_Snooze_peep_alarm = false;
       }
@@ -421,7 +471,7 @@ void timer3Isr()
   if(Alarms.Flag_Snooze_Plateau_alarm)
   {
       Alarms.Snooze_Count_Plateau_alarm++;
-      if( Alarms.Snooze_Count_Plateau_alarm > TIMEOUT_PLATEAU_PRESSURE_ALARM)
+      if( Alarms.Snooze_Count_Plateau_alarm > (uint32_t)TIMEOUT_PLATEAU_PRESSURE_ALARM)
       {
           Alarms.Flag_Snooze_Plateau_alarm = false;
       }
@@ -597,6 +647,8 @@ void CheckAlarms(void)
   if(!Alarms.Flag_peep_alarm && Alarms.Flag_Snooze_peep_alarm == false)
   {
     Alarms.alarms_priority_table[PEEP_ALARM_PRIORITY][0] = 2;
+          // Serial.println("PEEP ALARM 2");
+
   }
   if(!Alarms.Flag_Plateau_alarm && Alarms.Flag_Snooze_Plateau_alarm == false)
   {
@@ -739,9 +791,39 @@ void AlarmsTelemetry(void)
 
 }
 
+void SetAlarmsWaitTimes()
+{
+    // Wait duration after values are out of range
+  Alarms.WAIT_MAX_RR     =               ceil(1/TIMER3_PERIOD);
+  Alarms.WAIT_MAX_PEAK    =              ceil(1*breathLength/(TIMER3_PERIOD*1000));
+  // Alarms.WAIT_MAX_PEAK  =                12/TIMER3_PERIOD;
+  Alarms.WAIT_MAX_FIO2      =            ceil(2*breathLength/(TIMER3_PERIOD*1000));
+  Alarms.WAIT_MAX_TIDAL_VOL  =           ceil(3*breathLength/(TIMER3_PERIOD*1000));
+  Alarms.WAIT_MAX_MIN_VOLUME  =          ceil(1/TIMER3_PERIOD);
+  Alarms.WAIT_MAX_PEEP         =         ceil(1*breathLength/(TIMER3_PERIOD*1000));
+  Alarms.WAIT_MAX_PLATEAU       =        ceil(1*breathLength/(TIMER3_PERIOD*1000));
+}
 
 void AlarmsGen(void)
 {
+//For Testing
+  status.MinVolValid = false;
+  status.RRValid = false;
+
+
+
+  status.homingFailure = false;
+  status.presSensorFailure = false;
+  status.flowSensorFailure = false;
+  status.compressionMechFailure = false;
+   status.oxygenFailure = false;
+ status.ventCktDisconnected = false;
+  status.PeakPrsValid = false;
+  status.PltPrsValid = false;
+  status.PeepValid = false;
+  status.TidalVolValid = false;
+  status.FIO2Valid = false;
+  
   if(status.battInUse)
   {
     if(Alarms.Status_System_on_battery == false)
@@ -784,7 +866,7 @@ void AlarmsGen(void)
 
   if(status.ventCktDisconnected)
   {      
-    if(Alarms.Status_vent_dis == false)
+    if(Alarms.Status_vent_dis == false && status.ventCktDisconnectedValid)
     {
       Alarms.Status_vent_dis = true;
       Alarms.Flag_vent_dis_alarm = false;
@@ -809,7 +891,8 @@ void AlarmsGen(void)
   }
 
 
-  if(status.mechIntergrityFaiure)
+  // if(status.mechIntergrityFaiure)
+  if(status.compressionMechFailure)
   {      
     if(Alarms.Status_mech_int == false)
     {
@@ -873,12 +956,25 @@ void AlarmsGen(void)
   {
     Alarms.Status_O2_dis = false;
   }
+
+  // Alarms.Sensor_val_FiO = (float)FiO2_Value[setpoint.curFiO2][0] + 5.0;
+  Alarms.Sensor_val_RR = monitoring.measuredRR;//setpoint.curBPM;
+
+  Alarms.Sensor_val_FiO = O2.FIO2_conc;//(float)FiO2_Value[setpoint.reqFiO2][0] + 5.0;//O2.FIO2_conc;
+  Alarms.Sensor_val_Min_vol = TV.minuteVentilation;
+  Alarms.Sensor_val_TV = TV.maxInhale;
+  Alarms.Sensor_val_PEAK = monitoring.peakInspPressure;
+  Alarms.Sensor_val_Plateau = monitoring.plateauPressure;
+  Alarms.Sensor_val_PEEP = monitoring.PEEPressure;
+//  Serial.print("PEEP = ");Serial.println(Alarms.Sensor_val_PEEP);
+//   Serial.print("PEEPValid = ");Serial.println(status.PeepValid);
+
 }
 
 void alarmsSetup()
 {
     attachInterrupt(digitalPinToInterrupt(pin_SNOOZBTN), Snooze_alarm, RISING); 
-    Timer3.initialize(1000000); // set a timer of length 100000 microseconds (or 0.1 sec - or 10Hz => the led will blink 5 times, 5 cycles of on-and-off, per second)
+    Timer3.initialize(TIMER3_PERIOD * 1000000UL); // set a timer of length 100000 microseconds (or 0.1 sec - or 10Hz => the led will blink 5 times, 5 cycles of on-and-off, per second)
     Timer3.attachInterrupt( timer3Isr);
 }
 
@@ -888,4 +984,38 @@ void alarmControl()
   CheckAlarms();
   CheckSensorData();
   AlarmsTelemetry();
+  #ifdef Beeper //Function Needs Revision
+    beep(); //alarmAction = RING_ALARM, SNOOZE_ALARM; alarmSeverity = SEVERITY_HIGH, SEVERITY_MED, SEVERITY_LOW, SEVERITY_MUTE
+  #endif
 }
+
+#ifdef Beeper //Function Needs Revision
+
+void beep() // Launch a beep
+{
+  static unsigned int currentToneFreq = SNOOZE_ALARM;
+  static unsigned long t_millis = 0;
+
+  if (buzzer.action == SNOOZE_ALARM)
+  {
+    noTone(pin_BUZZER);
+    currentToneFreq = SNOOZE_ALARM;
+    buzzer.toneFreq = SNOOZE_ALARM;
+    buzzer.timePeriod = SNOOZE_ALARM;
+  }
+  else
+  {
+    if (buzzer.toneFreq > currentToneFreq)
+    {
+      currentToneFreq = buzzer.toneFreq; //High Severity Alarm Has priority
+      t_millis = 0;
+    }
+
+    if ((millis() - t_millis) >= buzzer.timePeriod)
+    {
+      t_millis = millis();
+      tone(pin_BUZZER, currentToneFreq, (int)(buzzer.timePeriod / 2)); //Duration in milliseconds
+    }    
+  }
+}
+#endif

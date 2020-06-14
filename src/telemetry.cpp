@@ -1,6 +1,7 @@
 #include "header.h"
 #include "flowSensor.h"
 #include "alarms.h"
+#include "sensors.h"
 
 #ifdef TX_SERIAL_TELEMETRY
 
@@ -8,6 +9,7 @@
 
 extern struct Flow_Sensor FS;
 extern struct P_Sensor p_sensor;
+extern struct O2_Sensor O2;
 extern struct STATUS_FLAGS status;
 extern struct setpointStatus setpoint;
 extern struct TidalVolume TV;
@@ -19,6 +21,12 @@ struct TEL_TYPE TEL;
 
 extern uint8_t FiO2_Value[4][2];
 extern uint8_t IE_R_Value[3][2];
+extern uint16_t measuredRR;
+extern uint16_t breathCtr;
+
+
+extern float maxNegativeFlow;
+extern float maxInspFlow;
 
 void Prepare_Tx_Telemetry()
 {
@@ -156,21 +164,21 @@ void Prepare_Tx_Telemetry()
 
         TEL_BUFF[TEL_PACKET_LENGTH-1] = (checksum & 0xFF);
         TEL_BUFF[TEL_PACKET_LENGTH] = 13; //CR
-#ifdef TEL_AT_UART0
-        if (Serial.availableForWrite() >= (TEL_PACKET_LENGTH+1))
-        {
-            TEL.FDCB = 0xFF;
-            Serial.write(TEL_BUFF, TEL_PACKET_LENGTH+1);
-            ctr++;        
-        }
-#else
+//#ifdef TEL_AT_UART0
+  //       if (Serial.availableForWrite() >= (TEL_PACKET_LENGTH+1))
+  //       {
+  // //          TEL.FDCB = 0xFF;
+  //           Serial.write(TEL_BUFF, TEL_PACKET_LENGTH+1);
+  //   //        ctr++;        
+  //       }
+//#else
         if (Serial1.availableForWrite() >= (TEL_PACKET_LENGTH+1))
         {
             TEL.FDCB = 0xFF;
             Serial1.write(TEL_BUFF, TEL_PACKET_LENGTH+1);
             ctr++;        
         }
-#endif
+//#endif
     }
 /*  int NData = 12;
   String str_Payload;
@@ -201,7 +209,7 @@ void Prepare_Tx_Telemetry()
     {
         milli_old = millis();
         TEL.txUpdateRate = ctr;
-        //Serial.print(F("Tel Tx Rate: ")); Serial.print(TEL.txUpdateRate); Serial.println(F(" Hz"));
+        // Serial.print(F("Tel Tx Rate: ")); Serial.print(TEL.txUpdateRate); Serial.println(F(" Hz"));
         ctr = 0;
     }
 }
@@ -210,33 +218,48 @@ void Prepare_Tx_Telemetry()
 #ifdef TX_SERIAL_TELEMETRY
 void GetTelData()
 {
-
+  static unsigned long ts = 0;
   static boolean init = true;
   byte TEL_BYTE = 0x00;
   if (init)
   {
+    ts = millis();
     TEL.Time = 0;
     TEL.txUpdateRate = 0;
     TEL.FDCB = 0xFF;
     init = false;
   }
 
-  TEL.Time += (samplePeriod1);
 
-  if ((TEL.Time % 20) == 0)
+  // Serial.print("TEL TS: "); Serial.println(millis()-ts);
+  // ts = millis();
+
+  if ((millis()-ts) >= 20)
   {
+    TEL.Time += (millis()-ts);
+    ts = millis();
     TEL.mTV = TV.measured; //ml
     //TEL.mTV = constrain(TEL.mTV, 0.0, 1000.0);
-    TEL.mTVinsp = TV.inspiration; //ml
+    // TEL.mTVinsp = TV.inspiration; //ml
+    TEL.mTVinsp = TV.maxInhale; //ml
     TEL.mTVexp = TV.expiration; //ml
     TEL.mPressure = p_sensor.pressure_gauge_CM; //cmH2O
     TEL.mFlowRate = FS.Q_SLM; //SLPM
     TEL.mPEEP = monitoring.PEEPressure;
     TEL.mPltPress = monitoring.plateauPressure;
-    TEL.mFiO2 = 21.0;
+    TEL.mFiO2 = O2.FIO2_conc;
     TEL.minuteVentilation = TV.minuteVentilation;
     TEL.mPeakPressure = monitoring.peakInspPressure;
-    TEL.mRR = monitoring.measuredRR;
+    //TEL.mRR = monitoring.measuredRR;
+
+    if (status.breathPhase == INSPIRATION_PHASE)
+    {
+      TEL.mRR = maxNegativeFlow;
+      TEL.mRR = (-1*(TEL.mRR - 255)) +200;
+    }
+    else if (status.breathPhase == EXPIRATION_PHASE)
+      TEL.mRR = maxInspFlow;
+    // TEL.mRR = breathCtr;
     TEL.staticCompliance = TV.staticCompliance;
     TEL.spTrigger = setpoint.flowTriggerSenstivity;
 

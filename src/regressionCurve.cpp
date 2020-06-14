@@ -1,4 +1,5 @@
 #include "header.h"
+#include "sensors.h"
 #include "curveFitting.h"
 
 //#define ALTERNATE_CALIBRATION_SCHEME

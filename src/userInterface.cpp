@@ -32,7 +32,7 @@ char VentMode[5][7]= {  "VCV   ",  "PCV   ",  "AC-VCV",  "AC-PCV" , "CPAP  "};
 
 
 // For Initial Values See setup() function in main.cpp
-uint8_t   Set_Param_FiO2     = 1;     // FiO2
+uint8_t   Set_Param_FiO2     = defaultFIO2Index;     // FiO2
 uint16_t  Set_Param_TV       = 200;    // Tidal Volume
 uint8_t   Set_Param_RR       = 20;     // Respiratory Rate
 uint8_t   Set_Param_PC       = 20;     // Pressure Control
@@ -43,7 +43,7 @@ uint8_t   Set_Param_vMode    = VENT_MODE_VCV;
 uint8_t   Set_Param_New_vMode  = 0;
 float     Set_Param_New_TRIG   = 0;
 uint8_t   Set_Param_New_IE_R   = 1;
-uint8_t   Set_Param_New_FiO2   = 1;     // FiO2
+uint8_t   Set_Param_New_FiO2   = defaultFIO2Index;     // FiO2
 
 
 
@@ -233,7 +233,14 @@ void clear_value(void)
 
 void Display(void)
 {
-  if(Alarms.Flag_alarm)
+  bool flag_alarm = Alarms.Flag_alarm;
+  if ( (display_screen_state >= 9) && (display_screen_state <= 15) )
+  {
+    flag_alarm = false;
+  }
+
+  // if(Alarms.Flag_alarm)
+  if(flag_alarm)
   {
       Alarms.Flag_alarm = false;
       if( Alarms.previous_alarm != Alarms.set_alarm)
@@ -259,53 +266,49 @@ void Display(void)
             {
                 case BATTERY_ALARM_PRIORITY:
                       lcd.setCursor(1, 2);
-                      lcd.print(F("SYSTEM ON BATTERY"));
+                      lcd.print(F("Error Code: 1"));
                       break;
                 case CKT_INTEGRITY_ALARM_PRIORITY:
                       lcd.setCursor(1, 2);
-                      lcd.print(F("CIRCUIT INTEGRITY"));
+                      lcd.print(F("Error Code: 2"));
                       break;
                 case OXYGEN_ALARM_PRIORITY:
                       lcd.setCursor(3, 2);
                       lcd.print(F("OXYGEN FAILURE"));
                       break;
                 case VENT_DIS_ALARM_PRIORITY:
-                      lcd.setCursor(5, 2);
+                      lcd.setCursor(5, 1);
                       lcd.print(F("VENTILATOR"));
+                      lcd.setCursor(7, 2);
+                      lcd.print(F("CIRCUIT"));
                       lcd.setCursor(4, 3);
                       lcd.print(F("DISCONNECTED"));
                       break;
                 case PRESSURE_DIS_ALARM_PRIORITY:
-                      lcd.setCursor(2, 2);
-                      lcd.print(F("PRESSURE SENSOR"));
-                      lcd.setCursor(4, 3);
-                      lcd.print(F("DISCONNECTED"));
+                      lcd.setCursor(1, 2);
+                      lcd.print(F("Error Code: 3"));
                       break;
                 case MECHANICAL_INT_ALARM_PRIORITY:
-                      lcd.setCursor(0, 2);
-                      lcd.print(F("MECHANICAL INTEGRITY"));
-                      lcd.setCursor(6, 3);
-                      lcd.print(F("FAILURE"));
+                      lcd.setCursor(1, 2);
+                      lcd.print(F("Error Code: 4"));
                       break;
                 case HOMING_NOT_DONE_ALARM_PRIORITY:
-                      lcd.setCursor(2, 2);
-                      lcd.print(F("HOMING NOT DONE"));
+                      lcd.setCursor(1, 2);
+                      lcd.print(F("Error Code: 5"));
                       break;
                 case HOURS_96_ALARM_PRIORITY:
                       lcd.setCursor(6, 2);
-                      lcd.print(F("96 HOURS"));
+                      lcd.print(F("96 HOURS!!!"));
+                      lcd.setCursor(1, 3);
+                      lcd.print(F("REPLACE AMBU BAG"));
                       break;
                 case FLOW_SENSOR_DIS_ALARM_PRIORITY:
-                      lcd.setCursor(4, 2);
-                      lcd.print(F("FLOW SENSOR"));
-                      lcd.setCursor(4, 3);
-                      lcd.print(F("DISCONNECTED"));
+                      lcd.setCursor(1, 2);
+                      lcd.print(F("Error Code: 6"));
                       break;
                 case O2_SENSOR_DIS_ALARM_PRIORITY:
-                      lcd.setCursor(5, 2);
-                      lcd.print(F("O2 SENSOR"));
-                      lcd.setCursor(4, 3);
-                      lcd.print(F("DISCONNECTED"));
+                      lcd.setCursor(1, 2);
+                      lcd.print(F("Error Code: 7"));
                       break;
 
                 //
@@ -762,7 +765,7 @@ void KeyPressed()           //ISR function
           // Change Triggering Value
           else if( display_screen_Next_state == DISPLAY_TRIG )
           {
-            if( Set_Param_New_TRIG > -0.5)
+            if( Set_Param_New_TRIG > 0.5)
             {
                Set_Param_New_TRIG = Set_Param_New_TRIG - 0.5;
                display_screen_state = DISPLAY_SET_TRIG;
