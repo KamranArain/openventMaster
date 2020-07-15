@@ -219,7 +219,7 @@ void Prepare_Tx_Telemetry()
 void GetTelData()
 {
   static unsigned long ts = 0;
-  static boolean init = true;
+  static bool init = true;
   byte TEL_BYTE = 0x00;
   if (init)
   {

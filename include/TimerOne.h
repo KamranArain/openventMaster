@@ -18,6 +18,7 @@
 #ifndef TimerOne_h_
 #define TimerOne_h_
 
+#if defined(__AVR__)
 #if defined(ARDUINO) && ARDUINO >= 100
 #include <Arduino.h>
 #else
@@ -488,6 +489,8 @@ class TimerOne
 };
 
 extern TimerOne Timer1;
+
+#endif
 
 #endif
 

@@ -1,7 +1,27 @@
 #ifndef __HEADER_H
 #define __HEADER_H
 
-//#include <Arduino.h> //For PlatformIO
+#include <Arduino.h> //For PlatformIO
+#ifndef __AVR__
+#include <HardwareSerial.h>
+// #include "uTimerLib.h" TODO
+
+#define USART6_TX PC_6 //| USART6_TX             |
+#define USART6_RX PC_7 //| USART6_RX             |
+
+#define USART2_TX PB_10 //| USART3_TX             |
+#define USART2_RX PB_11 //| USART3_RX             |
+
+#define USART1_TX PA_9  //| USART1_TX             |
+#define USART1_RX PA_10 //| USART1_RX             |
+
+#define UART4_TX PC_10 //| USART1_TX             |
+#define UART4_RX PC_11 //| USART1_RX             |
+
+extern HardwareSerial Serial1;
+extern HardwareSerial Serial3;
+extern HardwareSerial Serial4;
+#endif
 
 #define CODE_VER_MAJOR 2
 #define CODE_VER_MINOR 7 //(Took hold time out of expiration, Homing Done moved to interrupt, Plateau Pressure and PEEP measurements moved to readsensors function)
@@ -20,20 +40,19 @@
 #define Pa2cmH2O 0.0101972
 #define cmH2O_to_Pa 98.0665
 
-
-#define minBPM 8             // minimum respiratory speed
-#define defaultBPM 20        // default respiratory speed
-#define maxBPM 35             // maximum respiratory speed
-#define minVolume 200         // minimum respiratory volume in milliliters
-#define defaultVolume 500     // default respiratory volume in milliliters
-#define maxVolume 500         // maximum respiratory volume in milliliters
-#define minPressure 0        // minimum compression for the ambu-bag in cmH2O
-#define minPressureCPAP 5        // minimum compression for the ambu-bag in cmH2O
-#define defaultPressure 30 // default compression for the ambu-bag in cmH2O
-#define maxPressureCPAP 20     // maximum compression for the ambu-bag in cmH2O //approx 40cH20
-#define maxPressure 40     // maximum compression for the ambu-bag in cmH2O //approx 40cH20
-#define minWeight 2          // minimum compression for the ambu-bag in Pa
-#define maxWeight 150        // minimum compression for the ambu-bag in Pa
+#define minBPM 8                      // minimum respiratory speed
+#define defaultBPM 20                 // default respiratory speed
+#define maxBPM 35                     // maximum respiratory speed
+#define minVolume 200                 // minimum respiratory volume in milliliters
+#define defaultVolume 500             // default respiratory volume in milliliters
+#define maxVolume 500                 // maximum respiratory volume in milliliters
+#define minPressure 0                 // minimum compression for the ambu-bag in cmH2O
+#define minPressureCPAP 5             // minimum compression for the ambu-bag in cmH2O
+#define defaultPressure 30            // default compression for the ambu-bag in cmH2O
+#define maxPressureCPAP 20            // maximum compression for the ambu-bag in cmH2O //approx 40cH20
+#define maxPressure 40                // maximum compression for the ambu-bag in cmH2O //approx 40cH20
+#define minWeight 2                   // minimum compression for the ambu-bag in Pa
+#define maxWeight 150                 // minimum compression for the ambu-bag in Pa
 #define defaultExpirationRatioIndex 0 //Corresponds to 1:2 see definition: IE_R_Value
 #define defaultFIO2Index 0
 #define ADC_TO_VOLTS 0.004887585532746823 //0.004887585532746823 is from 5v/1023
@@ -49,15 +68,15 @@
        With default parameters, the whole compression can become as short as 250 ms
 */
 
-#define FULL_SCALE_VOLUME             800.0f  //ml
-#define FULL_SCALE_LENGTH             35.0f  //mm
-#define LINEAR_FACTOR_VOLUME          22.86f
-#define LIN_MECH_mm_per_rev           5.0f
-#define STEPPER_MICROSTEP             4.0f
-#define STEPPER_PULSES_PER_REV        200.0f
+#define FULL_SCALE_VOLUME 800.0f //ml
+#define FULL_SCALE_LENGTH 35.0f  //mm
+#define LINEAR_FACTOR_VOLUME 22.86f
+#define LIN_MECH_mm_per_rev 5.0f
+#define STEPPER_MICROSTEP 4.0f
+#define STEPPER_PULSES_PER_REV 200.0f
 /*******************************   HARDWARE OPTIONS   *******************************
    It's normal for the program to not compile if some of these are undefined as they need an alternative*/
-   
+
 //******************************   IMPIED DEFINITIONS  ********************************
 #ifdef ActiveBeeper
 #define Beeper
@@ -72,7 +91,7 @@
 #define SEVERITY_LOW_FREQ 1000
 
 //Durations in milliseconds
-#define SEVERITY_HIGH_TP 250 
+#define SEVERITY_HIGH_TP 250
 #define SEVERITY_MED_TP 750
 #define SEVERITY_LOW_TP 1500
 
@@ -100,14 +119,13 @@
 #define VOL_CONT_MODE 0
 #define PRESS_CONT_MODE 1
 
-#define VENT_MODE_VCV       0
-#define VENT_MODE_PCV       1
-#define VENT_MODE_AC_VCV    2
-#define VENT_MODE_AC_PCV    3
-#define VENT_MODE_CPAP      4
+#define VENT_MODE_VCV 0
+#define VENT_MODE_PCV 1
+#define VENT_MODE_AC_VCV 2
+#define VENT_MODE_AC_PCV 3
+#define VENT_MODE_CPAP 4
 
 /***************end***********************/
-
 
 //********************************   CONNECTION PINS   ********************************
 // ATmega2560-Arduino Pin Mapping: https://www.arduino.cc/en/Hacking/PinMapping2560
@@ -125,10 +143,12 @@
 // #define pin_Button_OK 42
 #define pin_Switch_START 28
 // #define pin_Switch_MODE 45
-#define pin_SNOOZBTN         3
-#define pin_BUZZER           37
+#define pin_SNOOZBTN 3
+#define pin_BUZZER 37
 // #define pins_KEYPAD ((PINA & 0xF0) >> 4)
+#if defined(__AVR__)
 #define pins_KEYPAD (PINA & 0x0F)
+#endif
 #define pin_KEYPAD_INTERRUPT 2
 
 // #define pin_Knob_1 A12 //VR1 // I/E Ratio
@@ -167,11 +187,10 @@
 #define highPressureAlarmDetect 10 // delay before an overpressure alarm is triggered (in samplePeriod increments)
 
 //Calibration Parameters
-#define STEPPERRANGE 40 //mm
-#define stepSize 1 //mm
-#define ORDER 3 //DO not exceed 20.
+#define STEPPERRANGE 40  //mm
+#define stepSize 1       //mm
+#define ORDER 3          //DO not exceed 20.
 #define ORDER_PRESS_EQ 3 //DO not exceed 20.
-
 
 //*******************************   REQUIRED LIBRARIES   *******************************
 #ifdef I2C
@@ -183,15 +202,14 @@
 #include <EEPROM.h> // read / write to the processor's internal EEPROM
 #endif
 
-
+#if defined(__AVR__)
 #include "TimerOne.h" // Timer component
 //  By Jesse Tane, Jérôme Despatis, Michael Polli, Dan Clemens, Paul Stroffregen
 //  https://playground.arduino.cc/Code/Timer1/
-
 #include "TimerThree.h" // Timer3 component
-
+#endif
 //***************************************   FUNCTION PROTOTYPES   ***************************************
-void Timer1ISR();
+//void Timer1ISR();
 
 void selfTest();
 void calibrate(int calibParam);
@@ -206,29 +224,29 @@ void GetTelData();
 void eeput(); // records to EEPROM (only if values are validated)
 void eeget();
 
-void txSlaveCMD(int CMD_ID, unsigned int period=0, unsigned int pulses=0, String dir="0");
+void txSlaveCMD(int CMD_ID, unsigned int period = 0, unsigned int pulses = 0, String dir = "0");
 void decodeSlaveTel();
 void receiveSlaveTel();
 //***************************************   END   ***************************************
 
 struct setpointStatus
 {
-  uint8_t curI_E; //I/E Ratio
+  uint8_t curI_E;         //I/E Ratio
   uint8_t curI_E_Section; //I/E Ratio
   uint8_t curBPM;         // BPM
-  uint16_t curVolume;          //Tidal Volume Setpoint
-  uint8_t curPressure;          //Insp pressure limit
-  uint8_t curFiO2;          //Oxygen Concentration
+  uint16_t curVolume;     //Tidal Volume Setpoint
+  uint8_t curPressure;    //Insp pressure limit
+  uint8_t curFiO2;        //Oxygen Concentration
   uint8_t curVentMode = VENT_MODE_VCV;
   uint8_t curControlVariable = VOL_CONT_MODE;
   bool curAssistMode_F = 0;
   bool curEnableCPAP_F = 0;
-  
-  uint8_t reqI_E_Section; //I/E Ratio
-  uint8_t reqBPM;         // BPM
+
+  uint8_t reqI_E_Section;      //I/E Ratio
+  uint8_t reqBPM;              // BPM
   uint16_t reqVolume;          //Tidal Volume Setpoint
-  uint8_t reqPressure;          //Insp pressure limit
-  uint8_t reqFiO2;          //Oxygen Concentration
+  uint8_t reqPressure;         //Insp pressure limit
+  uint8_t reqFiO2;             //Oxygen Concentration
   float flowTriggerSenstivity; //Lpm trigger for Assist mode
   uint8_t reqVentMode = VENT_MODE_VCV;
   uint8_t reqControlVariable = VOL_CONT_MODE;
@@ -246,7 +264,6 @@ struct TidalVolume
   float minuteVentilation = 0.0;
   float staticCompliance = 0.0; // (ml / cmH2O)
   float maxInhale = 0.0;
-
 };
 
 struct STATUS_FLAGS
@@ -273,9 +290,9 @@ struct STATUS_FLAGS
   bool FIO2Valid = false;
   bool ventCktDisconnectedValid = false;
 
-  bool  homeAtBadSensor = false;
-  bool  homeAtBadFlowSensor = false;
-  bool  homeAtBadPressSensor = false;
+  bool homeAtBadSensor = false;
+  bool homeAtBadFlowSensor = false;
+  bool homeAtBadPressSensor = false;
   bool WarmUpFlag = true;
 
   uint8_t breathPhase = WAIT_PHASE;
@@ -284,23 +301,20 @@ struct STATUS_FLAGS
   uint8_t selfTestStatus = ST_PASS;   // Selft Test is Implemented
   uint8_t sensorsHealth = HEALTH_BAD;
   uint8_t Homing_Done_F = 0;
-
-
-
 };
 
 struct MONITORING_PARAMS
 {
-float plateauPressure, /* Plateau pressure is the pressure that is applied by the ventilator to the small airways and alveoli.
+  float plateauPressure, /* Plateau pressure is the pressure that is applied by the ventilator to the small airways and alveoli.
                            It is measured at end-inspiration with an inspiratory hold maneuver.*/
       PEEPressure,       // Positive end-expiratory pressure (PEEP)
-      peakInspPressure;      // high pass filtered value of the pressure. Used to detect patient initiated breathing cycles
-uint8_t measuredRR = 0;
-unsigned long RR_timestamp = 0;
-unsigned long MV_timestamp = 0;
-unsigned long TV_timestamp = 0;
-unsigned long PR_timestamp = 0;
-unsigned long CV_timestamp = 0;
+      peakInspPressure;  // high pass filtered value of the pressure. Used to detect patient initiated breathing cycles
+  uint8_t measuredRR = 0;
+  unsigned long RR_timestamp = 0;
+  unsigned long MV_timestamp = 0;
+  unsigned long TV_timestamp = 0;
+  unsigned long PR_timestamp = 0;
+  unsigned long CV_timestamp = 0;
 };
 
 struct Slave
@@ -309,7 +323,7 @@ struct Slave
   int runAck = 0;
   int stopAck = 0;
   int homeAck = 0;
-  boolean strComplete = false;
+  bool strComplete = false;
   String AckStr = "";
 };
 
@@ -319,14 +333,14 @@ struct Slave
 #define VOL_VAR 3
 
 #define NO_CMD 0
-#define RUN   1
-#define STOP  2
-#define HOME  3
+#define RUN 1
+#define STOP 2
+#define HOME 3
 
 #define HOMING_CMD_NOT_SENT 0
 #define CMD_RECEIVED 1
 #define CMD_COMPLETE 2
-#define CMD_ERROR    3
+#define CMD_ERROR 3
 
 //***************************************   END   ***************************************
 #endif

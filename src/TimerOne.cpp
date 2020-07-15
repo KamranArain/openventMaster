@@ -17,6 +17,8 @@
 
 #include "TimerOne.h"
 
+#if defined(__AVR__)
+
 TimerOne Timer1;              // preinstatiate
 
 unsigned short TimerOne::pwmPeriod = 0;
@@ -52,3 +54,5 @@ void ftm1_isr(void)
 void TimerOne::isrDefaultUnused()
 {
 }
+
+#endif

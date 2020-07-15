@@ -15,7 +15,7 @@
  */
 
 #include "TimerThree.h"
-
+#if defined(__AVR__)
 TimerThree Timer3;              // preinstatiate
 
 unsigned short TimerThree::pwmPeriod = 0;
@@ -43,3 +43,4 @@ void ftm2_isr(void)
 
 #endif
 
+#endif
