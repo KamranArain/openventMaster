@@ -6,8 +6,8 @@
 #include <HardwareSerial.h>
 // #include "uTimerLib.h" TODO
 
-#define USART6_TX PC_6 //| USART6_TX             |
-#define USART6_RX PC_7 //| USART6_RX             |
+#define USART6_TX PC_6  //| USART6_TX             |
+#define USART6_RX PC_7  //| USART6_RX             |
 
 #define USART2_TX PB_10 //| USART3_TX             |
 #define USART2_RX PB_11 //| USART3_RX             |
@@ -15,8 +15,8 @@
 #define USART1_TX PA_9  //| USART1_TX             |
 #define USART1_RX PA_10 //| USART1_RX             |
 
-#define UART4_TX PC_10 //| USART1_TX             |
-#define UART4_RX PC_11 //| USART1_RX             |
+#define UART4_TX PC_10  //| UART4_TX              |
+#define UART4_RX PC_11  //| UART4_RX              |
 
 extern HardwareSerial Serial1;
 extern HardwareSerial Serial3;
