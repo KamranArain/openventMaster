@@ -6,7 +6,7 @@
   Released into the public domain.
 */
 
-#include "sfm3x00.h"
+#include "drivers/sfm3x00.h"
 #include <Wire.h>
 
  

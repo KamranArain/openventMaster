@@ -1,5 +1,5 @@
 #include "header.h"
-#include "flowSensor.h"
+#include "drivers/flowSensor.h"
 #include "Wire.h"
 
 #if defined(SFM3200AW)

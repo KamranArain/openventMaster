@@ -35,7 +35,7 @@
 
 #include <Wire.h>
 
-#include "Adafruit_ADS1015.h"
+#include "drivers/Adafruit_ADS1015.h"
 
 /**************************************************************************/
 /*!

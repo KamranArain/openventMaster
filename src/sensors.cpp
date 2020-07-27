@@ -1,8 +1,8 @@
 
 #include "header.h"
-#include "flowSensor.h"
+#include "drivers/flowSensor.h"
 #include "sensors.h"
-#include <Adafruit_ADS1015.h>
+#include "drivers/Adafruit_ADS1015.h"
 
 extern struct Flow_Sensor FS;
 extern struct STATUS_FLAGS status;
@@ -54,6 +54,7 @@ inline static void get_sensor_data(uint16_t *raw)
 
 float readVcc(void)
 {
+  //todo ender multiplex values 
 #if defined(__AVR__)
   long result; // Read 1.1V reference against AVcc
   ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
@@ -64,7 +65,7 @@ float readVcc(void)
   result = 1126400L / result; // Ba,,ck-calculate AVcc in mV
   return result;
 #endif
-return 0.1f;
+return 0.1f; // will be removed
 }
 
 void voltage_correction(float &diff_press_pa)

@@ -2,7 +2,12 @@
 #include "alarms.h"
 #include "sensors.h"
 #include "userInterface.h"
-#include "TimerThree.h"
+
+#ifdef __AVR__
+#include "drivers/TimerThree.h"
+#elif defined(STM32F4xx)
+HardwareTimer *Timer2 = new HardwareTimer(TIM2);
+#endif
 
 extern bool key_int_flag;
 
@@ -37,7 +42,6 @@ void beep();
 
 void CheckSensorData(void)
 {
-
   // Check FiO2
   if ((Alarms.Sensor_val_FiO > ((float)FiO2_Value[setpoint.curFiO2][1] + Alarms.THRESHOLD_FIO2)) && status.FIO2Valid)
   {
@@ -960,9 +964,13 @@ void alarmsSetup()
 #if defined(__AVR__)
   Timer3.initialize(TIMER3_PERIOD * 1000000UL); // set a timer of length 100000 microseconds (or 0.1 sec - or 10Hz => the led will blink 5 times, 5 cycles of on-and-off, per second)
   Timer3.attachInterrupt(timer3Isr);
-#else
-//TODO add timer
-// TimerLib.setInterval_us(timer3Isr, 1000000UL);
+#elif defined(STM32F4xx)
+  Timer2->pause();
+  Timer2->setMode(1, TIMER_OUTPUT_COMPARE);
+  Timer2->setOverflow(10, HERTZ_FORMAT);
+  Timer2->attachInterrupt(timer3Isr);
+  Timer2->refresh();
+  Timer2->resume();
 #endif
 }
 

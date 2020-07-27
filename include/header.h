@@ -2,15 +2,15 @@
 #define __HEADER_H
 
 #include <Arduino.h> //For PlatformIO
-#ifndef __AVR__
+
+#ifdef STM32F4xx
 #include <HardwareSerial.h>
-// #include "uTimerLib.h" TODO
 
 #define USART6_TX PC_6  //| USART6_TX             |
 #define USART6_RX PC_7  //| USART6_RX             |
 
-#define USART2_TX PB_10 //| USART3_TX             |
-#define USART2_RX PB_11 //| USART3_RX             |
+#define USART3_TX PB_10 //| USART3_TX             |
+#define USART3_RX PB_11 //| USART3_RX             |
 
 #define USART1_TX PA_9  //| USART1_TX             |
 #define USART1_RX PA_10 //| USART1_RX             |
@@ -18,13 +18,18 @@
 #define UART4_TX PC_10  //| UART4_TX              |
 #define UART4_RX PC_11  //| UART4_RX              |
 
+#define KEY_DATA0 PE_3
+#define KEY_DATA1 PE_4
+#define KEY_DATA2 PE_5
+#define KEY_DATA3 PE_6
+
 extern HardwareSerial Serial1;
 extern HardwareSerial Serial3;
 extern HardwareSerial Serial4;
 #endif
 
-#define CODE_VER_MAJOR 2
-#define CODE_VER_MINOR 7 //(Took hold time out of expiration, Homing Done moved to interrupt, Plateau Pressure and PEEP measurements moved to readsensors function)
+#define CODE_VER_MAJOR 3
+#define CODE_VER_MINOR 0 //(Took hold time out of expiration, Homing Done moved to interrupt, Plateau Pressure and PEEP measurements moved to readsensors function)
 // #define QT_PLOTTER
 //************************   DEVICE OPERATIONAL PARAMETERS   ************************/
 /*
@@ -130,8 +135,13 @@ extern HardwareSerial Serial4;
 //********************************   CONNECTION PINS   ********************************
 // ATmega2560-Arduino Pin Mapping: https://www.arduino.cc/en/Hacking/PinMapping2560
 #ifdef I2C
+#if defined(__AVR__)
 #define pin_SDA 20
 #define pin_SCL 21
+#elif defined(STM32F4xx)
+#define pin_SDA PB_7
+#define pin_SCL PB_6
+#endif 
 #endif
 
 //#define MPX_IN A4
@@ -195,7 +205,7 @@ extern HardwareSerial Serial4;
 //*******************************   REQUIRED LIBRARIES   *******************************
 #ifdef I2C
 #include <Wire.h>              // I2C Library 2 wire Protocol
-#include <LiquidCrystal_I2C.h> // Library for LCD //Liquid Crystal I2C by Frank de Brabander
+#include "drivers/LiquidCrystal_I2C.h" // Library for LCD //Liquid Crystal I2C by Frank de Brabander
 #endif
 
 #ifdef E2PROM
@@ -203,13 +213,14 @@ extern HardwareSerial Serial4;
 #endif
 
 #if defined(__AVR__)
-#include "TimerOne.h" // Timer component
+#include "drivers/TimerOne.h" // Timer component
 //  By Jesse Tane, Jérôme Despatis, Michael Polli, Dan Clemens, Paul Stroffregen
 //  https://playground.arduino.cc/Code/Timer1/
-#include "TimerThree.h" // Timer3 component
+#include "drivers/TimerThree.h" // Timer3 component
+void Timer1ISR();
 #endif
 //***************************************   FUNCTION PROTOTYPES   ***************************************
-//void Timer1ISR();
+
 
 void selfTest();
 void calibrate(int calibParam);

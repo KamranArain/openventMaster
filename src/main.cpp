@@ -26,20 +26,23 @@
     EMAIL : <sohaib_ashraf@hotamail.com>
 */
 #include "header.h"
-#include "flowSensor.h"
+#include "drivers/flowSensor.h"
 #include "control.h"
 #include "userInterface.h"
 #include "command.h"
 #include "alarms.h"
 #include "sensors.h"
+
 #ifdef EN_WATCHDOG
-#include <avr/wdt.h>
+#ifndef __AVR__
+#include <avr/wdt.h> // for avr
+#else
+// #include "drivers/stm32_wwdg.h" //for stm32/
+#endif
 #endif
 
-//Other Address could be 0x20, 0x27 , 0x3F
-// Run I2C_Scanner Script to discover device
-#ifndef __AVR__
-HardwareSerial Serial1(USART2_RX, USART2_TX);
+#ifdef STM32F4xx
+HardwareSerial Serial1(USART3_RX, USART3_TX);
 HardwareSerial Serial3(USART6_RX, USART6_TX);
 HardwareSerial Serial4(UART4_RX, UART4_TX);
 #endif
@@ -888,9 +891,18 @@ void setup()
 {
   // put your setup code here, to run once:
 #ifdef EN_WATCHDOG
+#ifdef __AVR__
   wdt_disable();
 #endif
+#endif
 
+#ifdef STM32F4xx
+  //************** DATA_PINS ****************//
+  pinMode(KEY_DATA0, INPUT); //DATA0
+  pinMode(KEY_DATA1, INPUT); //DATA1
+  pinMode(KEY_DATA2, INPUT); //DATA2
+  pinMode(KEY_DATA3, INPUT); //DATA3
+#endif
   unsigned long pre_millis = 0;
   bool initWarmUp = true;
 
@@ -940,7 +952,7 @@ void setup()
 #endif
       Serial1.begin(SERIAL_BAUD);
       Serial3.begin(SERIAL_BAUD);
-#else
+#elif defined(STM32F4xx)
       Serial.begin(SERIAL_BAUD);
       Serial1.begin(SERIAL_BAUD);
 #ifndef TEL_AT_UART0

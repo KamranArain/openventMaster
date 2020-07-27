@@ -684,8 +684,8 @@ void KeyPressed() //ISR function
 // byte val = (PINA & 0xF0) >> 4; // get PORTA value
 #if defined(__AVR__)
     byte val = pins_KEYPAD;
-#else
-    byte val = 0;
+#elif defined(STM32F4xx)
+    byte val = digitalRead(KEY_DATA0) | digitalRead(KEY_DATA1) << 1 | digitalRead(KEY_DATA2) << 2| digitalRead(KEY_DATA3) << 3;
 #endif
 
     switch (val)

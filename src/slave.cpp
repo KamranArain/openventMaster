@@ -15,7 +15,7 @@ void receiveSlaveTel()
 #if defined(__AVR__)
     // get the new byte:
     char inChar = (char)Serial2.read();
-#else
+#elif defined(STM32F4xx)
     char inChar = (char)Serial4.read();
 #endif
     // add it to the inputString:
@@ -110,7 +110,7 @@ void txSlaveCMD(int CMD_ID, unsigned int period, unsigned int pulses, String dir
   }
 #if defined(__AVR__)
   Serial2.print(cmdString);
-#else
+#elif defined(STM32F4xx)
   Serial4.print(cmdString);
 #endif
 
